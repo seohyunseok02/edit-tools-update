@@ -1025,7 +1025,12 @@ function buildFx(M, Tp, an, cat, items, opt) {
         try {
           const v = (it[key] || '').trim();
           if (key === 'small') hideSmall(M, c, L.comp, !v);
-          if (v || key !== 'small') M.setText(L, v || ' ', { auto: true });
+          if (v || key !== 'small') {
+            M.setText(L, v || ' ', { auto: true });
+            // 같은 글자를 두 겹으로 겹쳐 놓은 디자인(번짐·떨림 효과용)은 겹친 레이어에도 같은 문구와 위치를 넣는다. 안 넣으면 템플릿 예시 문구가 겹쳐 보인다.
+            const tl = dc.clip.layers, si = dc.slots[key], taken = Object.values(dc.slots);
+            for (let j = 0; j < ls.length; j++) { if (j === si || taken.includes(j) || !ls[j] || !ls[j].param || !tl[j] || oneLine(tl[j].text) !== oneLine(tl[si].text)) continue; M.setText(ls[j], v || ' ', { auto: true }); const x = layerX(M, L), pp = M.params(ls[j].comp)[2]; if (x != null && pp) M.setPos(pp, x, null); }
+          }
         } catch (e) { log.push(`"${it.main}" 문구를 넣지 못했습니다: ${e.message}`); }
       }
       const ti = place(c, start, it.t1, k === 0 ? -1 : baseTrack); if (k === 0) baseTrack = ti;
@@ -1193,7 +1198,7 @@ function fixMediaPaths(S, folder) {
   return { count: paths.length, paths };
 }
 
-const Engine = { TICKS, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight };
+const Engine = { TICKS, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
@@ -1364,7 +1369,7 @@ ${designs}
    · 감정이 실리지 않은 중립적인 정보에만 일반·심플 계열을 쓴다.
    · ${variety}
 - why: 그 디자인을 고른 맥락을 한 구절로 적어라(예: "통념 반박", "좋은 소식", "핵심 답"). 겉말이 아니라 앞뒤 흐름에서 읽은 이유여야 한다.
-- small: main 위에 얹는 짧은 보조 줄. 상황·조건·주어를 small에 깔고("수술을 결정하기 전", "두 번째 이유", "눈밑만 채운다고") 결론을 main에 두면 읽기 좋다. 필요 없으면 빈 문자열. "main만" 디자인이면 반드시 빈 문자열.
+- small: main 위에 얹는 짧은 보조 줄. 그 자체로 뜻이 통하는 말머리여야 한다("수술을 결정하기 전", "두 번째 이유", "첫 번째 환자", "원장님의 관점"). 한 문장을 둘로 쪼개 앞 조각만 올리지 마라: "틀니를", "치아가", "그래서"처럼 조사로 끝나는 낱말 하나나 뜻이 없는 말은 small이 될 수 없다. 그런 경우 그 말은 main에 넣고 small은 빈 문자열로 둬라. 필요 없으면 빈 문자열. "main만" 디자인이면 반드시 빈 문자열.
 - main: 핵심 문구. 말을 그대로 옮기지 말고 예시처럼 핵심만 줄여 써라. 길이와 말투(느낌표, 말줄임 등)는 예시를 따르라.
 - 색 구간: 디자인에 "main 색 구간: A | B | C"가 적혀 있으면 main이 그 수만큼의 색으로 나뉘어 칠해진다(보통 가운데 구간이 강조색). main 안에 "|"를 넣어 같은 수의 구간으로 나눠라. 가장 강조할 낱말이 강조색 구간에 오게 하고, 띄어쓰기는 "|" 앞이나 뒤에 그대로 넣어라. 예: 색 구간이 셋이면 "치료 결과에 |중요한 건 |'색'!". 구간 표시가 없는 디자인이면 "|"를 쓰지 마라.
 - 끝맺음: 한눈에 읽혀야 한다. "~해요", "~있어요", "~많아요", "~합니다"처럼 문장으로 끝내지 말고, 명사나 짧은 구로 끝나는 요약형으로 써라(예: "얇고 말랑한 느낌인 경우가 많아요" → "얇고 말랑한 촉감", "밝은 곳에서 색을 확인해 보세요" → "밝은 곳에서 색 확인하기"). 예외: 원장이 환자의 말을 대신 옮기는 대목(예: "어머 요즘 시술이 너무 좋아요~")이나 질문 디자인의 질문은 말투 그대로 써도 된다.
@@ -1385,10 +1390,13 @@ function fixDesign(it) { // 두 줄 문구인데 한 줄 디자인(또는 반대
   it.design = d.name;
 }
 /* 두 줄 자막의 좌우 위치: 이 업체가 비슷한 글자 수일 때 잡았던 위치를 따른다 (같은 디자인 계열 우선) */
-function posHint(c, cat, it) {
+function posHint(c, cat, it, tp) {
   const d = cat.designs.find(x => x.name === it.design); const es = effStyle(c); if (!d || !d.two || !(it.main2 || '').trim() || !es) return null;
   const n1 = [...it.main].length, n2 = [...it.main2].length; let best = null, bd = 99;
-  for (const e of es.examples) { if (!e.pos) continue; const ed = cat.designs.find(x => x.name === e.design), same = ed && ed.base === d.base; if (!same && !e.from) continue; /* 빌려온 예는 디자인이 달라도 위치를 가져온다 */ const dist = Math.abs(e.pos.n1 - n1) + Math.abs(e.pos.n2 - n2) + (same ? 0 : 2); if (dist < bd) { bd = dist; best = e.pos; } }
+  // 이 템플릿에서 그 디자인의 두 줄이 원래 놓인 자리. 가져올 위치가 여기서 크게 벗어나면 생김새(정렬·배치)가 다른 디자인에서 온 값이라, 넣으면 화면 밖으로 나가거나 두 줄이 겹친다.
+  const x0 = (ci, key) => { const dc = d.clips[ci], L = dc && dc.clip.layers[dc.slots[key]]; return L ? E.layerX(tp || st.tp, L) : null; }, xb0 = x0(0, 'main'), xf0 = x0(1, 'main2');
+  if (xb0 == null || xf0 == null) return null;
+  for (const e of es.examples) { const tol = e.from ? 0.03 : 0.12; /* 다른 업체에서 빌려온 위치는 이 템플릿의 원래 자리와 거의 같을 때만 쓴다 */ if (!e.pos || Math.abs(e.pos.xb - xb0) > tol || Math.abs(e.pos.xf - xf0) > tol) continue; const ed = cat.designs.find(x => x.name === e.design), same = ed && ed.base === d.base; if (!same && !e.from) continue; /* 빌려온 예는 디자인이 달라도 위치를 가져온다 */ const dist = Math.abs(e.pos.n1 - n1) + Math.abs(e.pos.n2 - n2) + (same ? 0 : 2); if (dist < bd) { bd = dist; best = e.pos; } }
   return best && bd <= 6 ? { xb: best.xb, xf: best.xf } : null;
 }
 /* 이름 끝 번호만 다른 같은 계열 디자인(행복/기쁨 1·2, 심플 포인트 1~4 …)은 같은 쓰임의 다른 모양이므로 돌아가며 쓴다. 줄 구성과 색 구간 수가 같은 것끼리만 바꾼다. */
@@ -1565,7 +1573,7 @@ $('btnBuild').onclick = async () => {
   show('err4', ''); $('log').textContent = ''; $('btnBuild').disabled = true; $('buildState').textContent = '만드는 중…'; await new Promise(r => setTimeout(r, 30));
   try {
     const c = st.clients[st.cur], M = await E.Proj.fromBytes(st.mBytes, st.M.name), an = E.analyzeMid(M), Tp = await E.Proj.fromBytes(c.tplBytes, c.tplName), cat = E.analyzeTemplate(Tp);
-    const r = E.buildFx(M, Tp, an, cat, st.items.filter(x => x.on).map(x => ({ t0: x.t0, t1: x.t1, design: x.design, small: x.small, main: x.main, main2: x.main2, pos: posHint(c, cat, x) })), { bump: parseFloat($('bump').value) || 0 });
+    const r = E.buildFx(M, Tp, an, cat, st.items.filter(x => x.on).map(x => ({ t0: x.t0, t1: x.t1, design: x.design, small: x.small, main: x.main, main2: x.main2, pos: posHint(c, cat, x, Tp) })), { bump: parseFloat($('bump').value) || 0 });
     $('buildState').textContent = '파일로 묶는 중…'; await new Promise(r2 => setTimeout(r2, 30));
     const bytes = await M.encode(), d = new Date(), stamp = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
     const msg = await saveOut(bytes, st.M.name.replace(/\.prproj$/i, '') + '_효과자막_' + stamp + '.prproj');
