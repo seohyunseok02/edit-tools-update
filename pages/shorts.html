@@ -1,0 +1,1674 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>쇼츠 자동 편집기</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 위에서 아래로 내려가는 4단계 작업대. 각 단계는 앞 단계가 끝나야 열린다. */
+:root{
+  --bg:#eef1f2;--panel:#fbfcfc;--ink:#16211f;--mute:#4a5754;--line:#d3dadb;--accent:#075f55;--accent-ink:#fff;--accent-soft:#d9eeea;
+  --warn:#8a3a0a;--warn-soft:#fbe9d9;--seg:#075f55;--hookseg:#b23a08;--track:#dfe5e6;
+  --font:"IBM Plex Sans KR","Malgun Gothic",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101615;--panel:#18201f;--ink:#e6eeec;--mute:#93a3a0;--line:#2c3836;--accent:#3fc1b0;--accent-ink:#06211d;--accent-soft:#17342f;--warn:#f0a36b;--warn-soft:#3a2415;--seg:#3fc1b0;--hookseg:#fb923c;--track:#243130;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#101615;--panel:#18201f;--ink:#e6eeec;--mute:#93a3a0;--line:#2c3836;--accent:#3fc1b0;--accent-ink:#06211d;--accent-soft:#17342f;--warn:#f0a36b;--warn-soft:#3a2415;--seg:#3fc1b0;--hookseg:#fb923c;--track:#243130;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--font);padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+header p{margin:4px 0 0;color:var(--mute)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+section.off{opacity:.5;pointer-events:none}
+h2{font-size:16px;margin:0;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+h2 .n{font:500 12px var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px}
+h2 small{font-weight:400;color:var(--mute);font-size:13px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:7px 14px}
+button.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=text],input[type=number],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;min-width:0}
+textarea{width:100%;min-height:110px;font:12px/1.5 var(--mono)}
+::placeholder{color:var(--mute);opacity:1}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.drops{grid-template-columns:1fr}}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:22px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0}
+.drop b{font-size:15px}.drop span{color:var(--mute);font-size:13px;word-break:break-all}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop.ok{border-style:solid;border-color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+.kv{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.kv h3{margin:0;font-size:13px;color:var(--mute);font-weight:500}
+.kv .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kv .row label{flex:1;min-width:0;word-break:break-all;font-size:13px}
+.kv input[type=number]{width:84px}
+.kv select{width:100%}
+.tag{font:500 11px var(--mono);padding:2px 7px;border-radius:4px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.note{color:var(--mute);font-size:13px;margin:0}
+.msg{border-radius:7px;padding:8px 12px;background:var(--warn-soft);color:var(--warn);font-size:13px;white-space:pre-wrap}
+.cand{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.cand.sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.cand .top{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.cand .top label{display:flex;gap:10px;align-items:flex-start;flex:1;min-width:0;cursor:pointer}
+.cand .top input{margin-top:5px;width:17px;height:17px;accent-color:var(--accent)}
+.cand .ttl{font-weight:600;font-size:16px}
+.cand .meta{font:12px var(--mono);color:var(--mute)}
+.cand .hook{font-size:15px}
+.cand .hook::before{content:"첫 2초 ";font:500 11px var(--mono);color:var(--hookseg)}
+.bar{position:relative;height:10px;border-radius:5px;background:var(--track);overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;background:var(--seg);min-width:3px}
+.bar i.h{background:var(--hookseg)}
+.detail{border-top:1px dashed var(--line);padding-top:10px;display:flex;flex-direction:column;gap:10px}
+.detail h4{margin:0;font-size:13px;color:var(--mute);font-weight:500}
+.titles{display:flex;flex-direction:column;gap:6px}
+.titles label{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.titles input[type=text]{flex:1;min-width:120px}
+.rows{display:flex;flex-direction:column;gap:6px}
+.r{display:grid;grid-template-columns:112px 1fr 1fr 150px;gap:6px;align-items:center}
+.r.ins{grid-template-columns:112px 1fr 150px}
+.r .t{font:12px var(--mono);color:var(--mute)}
+.r .nm{min-width:0;word-break:break-all;font-size:13px}
+.pair{display:flex;gap:6px;min-width:0}.pair select{min-width:0;flex:1}.pair button{padding:5px 10px;white-space:nowrap}
+@media (max-width:640px){.r,.r.ins{grid-template-columns:1fr}}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#log{font:12px/1.6 var(--mono);color:var(--mute);white-space:pre-wrap;margin:0}
+details summary{cursor:pointer;color:var(--mute);font-size:13px}
+.manual{border:2px solid var(--accent);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--accent-soft)}
+.manual h3{margin:0;font-size:15px}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.steps a{color:var(--accent);font-weight:600}
+#manualOut{min-height:160px;margin-top:8px}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>쇼츠 자동 편집기</h1>
+    <p>완성된 미드폼 프로젝트에서 구간을 골라, 쇼츠 디자인 프로젝트의 자막·효과로 쇼츠를 만들어 넣습니다. 프로젝트 파일은 이 브라우저 안에서만 처리됩니다.</p>
+  </header>
+
+  <section id="s1">
+    <h2><span class="n">1</span>프로젝트 넣기 <small>두 파일을 끌어다 놓으세요. 원본은 바뀌지 않습니다.</small></h2>
+    <div class="drops">
+      <div class="drop" id="dropM" tabindex="0" role="button"><b>미드폼 프로젝트</b><span id="nameM">완성된 가로 영상 .prproj</span></div>
+      <div class="drop" id="dropS" tabindex="0" role="button"><b>쇼츠 디자인 프로젝트</b><span id="nameS">자막·효과음 견본이 든 세로 .prproj</span></div>
+    </div>
+    <input type="file" id="fileM" accept=".prproj" hidden><input type="file" id="fileS" accept=".prproj" hidden>
+    <div class="msg" id="err1" hidden></div>
+  </section>
+
+  <section id="s2" class="off">
+    <h2><span class="n">2</span>읽은 내용 확인 <small>자동으로 찾은 값입니다. 틀린 곳만 고치세요.</small></h2>
+    <div class="grid" id="setup"></div>
+    <p class="note" id="setupNote"></p>
+  </section>
+
+  <section id="s3" class="off">
+    <h2><span class="n">3</span>구간 고르기 <small>말자막 대본을 읽고 쇼츠가 될 만한 구간을 찾습니다.</small></h2>
+    <div class="actions">
+      <button class="pri" id="btnFind">후보와 문구 한 번에 받기</button>
+      <label>후보 수 <input type="number" id="nCand" value="5" min="2" max="8" style="width:64px"></label>
+      <label>AI <select id="aiMode"></select></label>
+      <span class="note" id="findState"></span>
+    </div>
+    <div id="gptBox" class="kv" hidden>
+      <h3>GPT 연결 (OpenAI API)</h3>
+      <div class="row"><label for="gptKey">API 키</label><input type="password" id="gptKey" placeholder="sk-…" autocomplete="off" style="flex:2;min-width:160px"><button id="btnModels">모델 불러오기</button></div>
+      <div class="row"><label for="gptModel">모델</label><select id="gptModel" style="flex:2;width:auto"></select></div>
+      <label><input type="checkbox" id="gptKeep"> 이 컴퓨터의 브라우저에 키 기억하기</label>
+      <p class="note" id="gptNote">키는 platform.openai.com 의 API keys 에서 만듭니다. ChatGPT 구독과는 별개로 쓴 만큼 요금이 나옵니다. 키는 이 페이지에서 OpenAI로만 보내집니다.</p>
+    </div>
+    <div id="manual" class="manual" hidden>
+      <h3 id="manualFor">AI에게 물어보기</h3>
+      <ol class="steps">
+        <li><b>요청문 복사</b>를 누릅니다. <button class="pri" id="btnCopy">요청문 복사</button> <span class="note" id="copyState"></span></li>
+        <li>ChatGPT를 열어 새 대화에 붙여넣고 보냅니다. <a id="lnkGpt" href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT 열기</a></li>
+        <li>ChatGPT가 준 답 전체를 복사해 아래 칸에 붙여넣고 <b>답 적용</b>을 누릅니다.</li>
+      </ol>
+      <textarea id="manualIn" placeholder="AI가 준 답을 여기에 붙여넣으세요 ( { 로 시작해 } 로 끝나는 내용 )"></textarea>
+      <div class="actions"><button class="pri" id="btnPaste">답 적용</button><span class="note" id="queueState"></span></div>
+      <details><summary>복사 버튼이 안 될 때: 요청문을 직접 선택해 복사하기</summary><textarea id="manualOut" readonly></textarea></details>
+    </div>
+    <div class="msg" id="err3" hidden></div>
+    <div id="cands" style="display:flex;flex-direction:column;gap:10px"></div>
+  </section>
+
+  <section id="s4" class="off">
+    <h2><span class="n">4</span>쇼츠 만들기 <small>고른 구간마다 문구를 확인한 뒤 프로젝트 파일로 받습니다.</small></h2>
+    <div class="actions">
+      <button class="pri" id="btnBuild" disabled>고른 구간으로 쇼츠 만들기</button>
+      <span class="note" id="buildState"></span>
+    </div>
+    <p class="note" id="buildWhy"></p>
+    <div class="msg" id="err4" hidden></div>
+    <pre id="log"></pre>
+  </section>
+</div>
+
+<script>
+'use strict';
+/* 쇼츠 자동화 엔진: 프리미어 .prproj(XML)를 읽고, 미드폼 구간을 쇼츠 디자인 프로젝트로 옮겨 넣는다.
+   브라우저 DOM API만 쓴다. 텍스트 교체·클립 복제 부분은 자막도구.html에서 검증된 방식을 따른다. */
+const TICKS = 254016000000;
+const VIDEO_EXT = /\.(mp4|mov|mxf|mts|m2ts|avi|mkv|r3d|braw|webm)$/i;
+const IMG_EXT = /\.(png|jpe?g|psd|ai|tiff?|gif|webp|bmp|svg)$/i;
+const AUD_EXT = /\.(wav|mp3|aac|m4a|aiff?|flac|ogg)$/i;
+
+function ch(n, ...names) { for (const nm of names) { if (!n) return null; let f = null; for (let c = n.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === nm) { f = c; break; } n = f; } return n; }
+function chs(n, nm) { const r = []; if (n) for (let c = n.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === nm) r.push(c); return r; }
+function txt(n) { return n ? n.textContent : ''; }
+function baseName(p) { return String(p || '').replace(/\\/g, '/').split('/').pop(); }
+function fmtNum(v) { const r = Math.round(v * 1e6) / 1e6; return Number.isInteger(r) ? r + '.' : String(r); }
+
+/* ---------------- 텍스트 데이터 (스키마 없는 FlatBuffer) ---------------- */
+const BASE = 12;
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+function fbParse(b) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength), N = b.length;
+  if (N < 20 || dv.getUint32(8, true) !== 0x11223344) throw new Error('알 수 없는 텍스트 형식');
+  const u32 = p => dv.getUint32(p, true), i32 = p => dv.getInt32(p, true), u16 = p => dv.getUint16(p, true);
+  const refs = [], starts = new Set(), strings = [], tables = new Map(), objs = new Map();
+  const al4 = q => (q - BASE) % 4 === 0;
+  function isStr(q) {
+    if (q + 4 > N) return false; const L = u32(q); if (L === 0 || q + 4 + L >= N || b[q + 4 + L] !== 0) return false;
+    for (let i = 0; i < L; i++) if (b[q + 4 + i] === 0) return false;
+    try { utf8.decode(b.subarray(q + 4, q + 4 + L)); } catch { return false; } return true;
+  }
+  function tableOk(t) {
+    if (t < BASE || t + 4 > N || !al4(t)) return false; const vt = t - i32(t);
+    if (vt < BASE || vt + 4 > N || (vt - BASE) % 2) return false; const vs = u16(vt), ts = u16(vt + 2);
+    if (vs < 4 || vs % 2 || vt + vs > N || ts < 4 || t + ts > N) return false;
+    for (let i = 4; i < vs; i += 2) { const fo = u16(vt + i); if (fo && (fo < 4 || fo >= ts)) return false; }
+    return true;
+  }
+  function vecOffsetsOk(q) {
+    const n = u32(q); if (n === 0 || n > 4096 || q + 4 + 4 * n > N) return false;
+    for (let i = 0; i < n; i++) { const e = q + 4 + 4 * i, t = e + u32(e); if (u32(e) === 0 || t >= N || !al4(t) || !(isStr(t) || tableOk(t))) return false; }
+    return true;
+  }
+  function obj(q, parent) {
+    if (objs.has(q)) return true;
+    const n = q + 4 <= N ? u32(q) : 0;
+    if (n > 0 && q + 4 + 4 * n <= N && vecOffsetsOk(q)) {
+      objs.set(q, 'v'); starts.add(q);
+      for (let i = 0; i < n; i++) { const e = q + 4 + 4 * i; const t = e + u32(e); refs.push({ p: e, q: t, k: 'u' }); obj(t, { vec: q }); }
+      return true;
+    }
+    if (isStr(q)) { objs.set(q, 's'); starts.add(q); const L = u32(q); strings.push({ q, L, text: utf8.decode(b.subarray(q + 4, q + 4 + L)), parent }); return true; }
+    if (tableOk(q)) { visitTable(q); return true; }
+    if (n > 0 && n < 65536 && q + 4 + n <= N) { objs.set(q, 'b'); starts.add(q); return true; }
+    return false;
+  }
+  function visitTable(t) {
+    if (objs.has(t)) return; objs.set(t, 't');
+    const vt = t - i32(t), vs = u16(vt), ts = u16(vt + 2);
+    starts.add(t); starts.add(vt); refs.push({ p: t, q: vt, k: 's' });
+    const fos = []; for (let i = 4; i < vs; i += 2) { const fo = u16(vt + i); if (fo) fos.push(fo); }
+    const sorted = [...new Set(fos)].sort((a, c) => a - c);
+    const sig = Array.from(b.subarray(vt, vt + vs)).join(',');
+    tables.set(t, { vt, vs, ts, sig });
+    for (let j = 0; j < sorted.length; j++) {
+      const fo = sorted[j], size = (j + 1 < sorted.length ? sorted[j + 1] : ts) - fo, p = t + fo;
+      if (size < 4 || !al4(p)) continue;
+      const v = u32(p), q = p + v;
+      if (v === 0 || v >= N || q >= N || !al4(q)) continue;
+      if (obj(q, { table: t, fo })) refs.push({ p, q, k: 'u' });
+    }
+  }
+  const r0 = BASE + u32(BASE); refs.push({ p: BASE, q: r0, k: 'u' }); starts.add(BASE);
+  if (!tableOk(r0)) throw new Error('루트 테이블 오류'); visitTable(r0);
+  let main = strings.find(s => s.parent && s.parent.table !== undefined && s.parent.fo === 4 && tables.get(s.parent.table).sig === '8,0,12,0,4,0,8,0');
+  if (!main) main = strings.slice().sort((a, c) => c.L - a.L)[0];
+  return { refs, starts, strings, main, objs, tables };
+}
+function fbText(b) { const P = fbParse(b); if (!P.main) throw new Error('텍스트 없음'); return P.main.text; }
+function fbReplace(b, newText, oldText) {
+  const P = fbParse(b); const s = (oldText != null && P.strings.find(x => x.text === oldText)) || P.main; if (!s) throw new Error('텍스트 없음');
+  const S = s.q, enc = new TextEncoder().encode(newText);
+  let E = b.length; for (const x of P.starts) if (x > S && x < E) E = x;
+  const bdv = new DataView(b.buffer, b.byteOffset, b.byteLength), vts = new Set(P.refs.filter(r => r.k === 's').map(r => r.q)), refP = new Set(P.refs.map(r => r.p));
+  const cov = new Uint8Array(b.length);
+  for (const [t, T] of P.tables) { cov.fill(1, t, t + T.ts); cov.fill(1, T.vt, T.vt + T.vs); }
+  for (const [q, k] of P.objs) if (k !== 't') { const n = bdv.getUint32(q, true); cov.fill(1, q, Math.min(b.length, q + 4 + (k === 's' ? n + 1 : k === 'v' ? 4 * n : n))); }
+  for (let p = BASE; p + 4 <= b.length; p += 4) {
+    if (refP.has(p) || (p >= S && p < E) || cov[p] || cov[p + 3]) continue;
+    const q = p - bdv.getInt32(p, true);
+    if (vts.has(q) && q !== p && ((p < S) !== (q < S))) P.refs.push({ p, q, k: 's' });
+  }
+  const lensOf = t => [t.length, [...t].length, new TextEncoder().encode(t).length];
+  const oldL = lensOf(s.text), runs = [];
+  for (const [q, k] of P.objs) {
+    if ((k !== 's' && k !== 'b') || q === S) continue;
+    const n = bdv.getUint32(q, true); if (n < 1 || n > 64 || q + 4 + 4 * n > b.length) continue;
+    const vals = []; let sum = 0; for (let i = 0; i < n; i++) { const v = bdv.getUint32(q + 4 + 4 * i, true); vals.push(v); sum += v; }
+    if (vals.some(v => v > 1e6)) continue;
+    for (let u = 0; u < 3; u++) { const extra = sum - oldL[u]; if (extra === 0 || extra === 1) { runs.push({ q, n, vals, u, extra }); break; } }
+  }
+  const old = E - S, need = 4 + enc.length + 1;
+  const nb = need > old ? old + Math.ceil((need - old) / 4) * 4 : old - Math.floor((old - need) / 4) * 4;
+  const delta = nb - old;
+  const out = new Uint8Array(b.length + delta), dv = new DataView(out.buffer);
+  out.set(b.subarray(0, S), 0); dv.setUint32(S, enc.length, true); out.set(enc, S + 4); out.set(b.subarray(E), S + nb);
+  const mp = x => x >= E ? x + delta : x;
+  for (const r of P.refs) { const p = mp(r.p), q = mp(r.q); if (r.k === 'u') dv.setUint32(p, q - p, true); else dv.setInt32(p, p - q, true); }
+  const newL = lensOf(newText);
+  for (const R of runs) {
+    const v = R.vals.slice(); let d = newL[R.u] + R.extra - v.reduce((a, c) => a + c, 0);
+    if (d > 0) v[v.length - 1] += d;
+    for (let i = v.length - 1; d < 0 && i >= 0; i--) { const t = Math.min(v[i] - (i ? 1 : 0), -d); if (t > 0) { v[i] -= t; d += t; } }
+    for (let i = v.length - 1; d < 0 && i >= 0; i--) { const t = Math.min(v[i], -d); v[i] -= t; d += t; }
+    const q2 = mp(R.q); v.forEach((x, i) => dv.setUint32(q2 + 4 + 4 * i, x, true));
+  }
+  dv.setUint32(0, out.length - 12, true);
+  if (!fbParse(out).strings.some(x => x.text === newText)) throw new Error('텍스트 검증 실패');
+  return out;
+}
+/* 한 레이어의 글자는 서식이 바뀌는 곳마다 여러 조각으로 저장될 수 있다. 레이어 이름과 맞춰 화면 순서대로 돌려준다. */
+function textParts(b, inst) {
+  const P = fbParse(b); const norm = t => t.replace(/[\r\n]+/g, ' ').trim(); const name = norm(inst || '');
+  if (name) {
+    const c = P.strings.filter(s => norm(s.text) && name.includes(norm(s.text))).map(s => ({ t: s.text, at: name.indexOf(norm(s.text)) })).sort((a, z) => a.at - z.at || z.t.length - a.t.length);
+    const out = []; let pos = 0; for (const x of c) { if (x.at >= pos) { out.push(x.t); pos = x.at + norm(x.t).length; } }
+    if (out.length) return out;
+  }
+  return P.main ? [P.main.text] : [];
+}
+/* 텍스트 데이터에 적힌 글꼴 이름 */
+function fbFont(b, parts) { const P = fbParse(b); const f = P.strings.map(x => x.text).filter(t => /^[A-Za-z][A-Za-z0-9 _.-]{3,}$/.test(t) && !parts.includes(t)); return f[0] || ''; }
+function toB64(u) { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+function fromB64(b64) { const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function randHash(len) { const r = crypto.getRandomValues(new Uint8Array(12)); const h = Array.from(r, x => x.toString(16).padStart(2, '0')).join(''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 24)}${(len + 12).toString(16).padStart(8, '0')}`; }
+
+/* ---------------- 프로젝트 한 개 ---------------- */
+const LOCAL_STOP = /MediaSource$|SequenceSource$|^Sequence$|Track$|TrackGroup$|^Media$|^MasterClip$/;
+class Proj {
+  static async fromBytes(bytes, name) {
+    const gz = bytes[0] === 0x1f && bytes[1] === 0x8b;
+    const text = gz ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text() : new TextDecoder().decode(bytes);
+    return new Proj(text, name);
+  }
+  constructor(text, name) {
+    const at = text.indexOf('<PremiereData'); if (at < 0) throw new Error('프리미어 프로젝트 파일이 아닙니다: ' + name);
+    this.name = name; this.prefix = text.slice(0, at);
+    this.doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (this.doc.getElementsByTagName('parsererror').length) throw new Error('프로젝트 파일을 해석하지 못했습니다: ' + name);
+    this.root = this.doc.documentElement; this.byId = new Map(); this.byUid = new Map(); this.hashIdx = new Map();
+    this.maxId = 0; this.maxNode = 0; this.xmaps = new WeakMap(); this.imported = 0; this._info = new Map();
+    for (let n = this.root.firstElementChild; n; n = n.nextElementSibling) this._reg(n);
+    for (const e of this.root.querySelectorAll('[BinaryHash]')) this._addHash(e);
+  }
+  _reg(n) {
+    const id = n.getAttribute('ObjectID'); if (id) { this.byId.set(id, n); if (+id > this.maxId) this.maxId = +id; }
+    const u = n.getAttribute('ObjectUID'); if (u) this.byUid.set(u, n);
+    if (/ClipTrackItem$/.test(n.tagName)) { const x = ch(n, 'ClipTrackItem', 'TrackItem', 'Node', 'ID'); if (x && +x.textContent > this.maxNode) this.maxNode = +x.textContent; }
+  }
+  _addHash(e) { const h = e.getAttribute('BinaryHash'); let l = this.hashIdx.get(h); if (!l) this.hashIdx.set(h, l = []); l.push(e); }
+  _delHash(e) { const l = this.hashIdx.get(e.getAttribute('BinaryHash')); if (l) { const i = l.indexOf(e); if (i >= 0) l.splice(i, 1); } }
+  hashContent(h) { const c = (this.hashIdx.get(h) || []).find(e => e.textContent.trim()); return c ? c.textContent : null; }
+  deref(e) { if (!e) return null; const r = e.getAttribute('ObjectRef'); if (r) return this.byId.get(r) || null; const u = e.getAttribute('ObjectURef'); if (u) return this.byUid.get(u) || null; return null; }
+  async encode() {
+    const blob = new Blob([this.prefix + new XMLSerializer().serializeToString(this.root) + '\n']);
+    return new Uint8Array(await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  }
+
+  /* ----- 읽기 ----- */
+  seqs() {
+    return chs(this.root, 'Sequence').map(s => {
+      const o = { node: s, name: txt(ch(s, 'Name')) || '(이름 없음)', w: 1920, h: 1080, frame: 8467200000, vtracks: [], atracks: [] };
+      for (const tg of chs(ch(s, 'TrackGroups'), 'TrackGroup')) {
+        const g = this.deref(ch(tg, 'Second')); if (!g) continue;
+        const tracks = chs(ch(g, 'TrackGroup', 'Tracks'), 'Track').map(t => this.deref(t)).filter(Boolean);
+        if (g.tagName === 'VideoTrackGroup') {
+          const r = txt(ch(g, 'FrameRect')).split(',').map(Number); if (r.length === 4 && r[2] > r[0]) { o.w = r[2] - r[0]; o.h = r[3] - r[1]; }
+          o.frame = +txt(ch(g, 'TrackGroup', 'FrameRate')) || o.frame; o.vtracks = tracks;
+        } else if (g.tagName === 'AudioTrackGroup') o.atracks = tracks;
+      }
+      return o;
+    });
+  }
+  items(track) { return chs(ch(track, 'ClipTrack', 'ClipItems', 'TrackItems'), 'TrackItem').map(e => this.deref(e)).filter(n => n && ch(n, 'ClipTrackItem')); }
+  comps(ti) { const chain = this.deref(ch(ti, 'ClipTrackItem', 'ComponentOwner', 'Components')); return chain ? chs(ch(chain, 'ComponentChain', 'Components'), 'Component').map(e => this.deref(e)).filter(Boolean) : []; }
+  params(comp) { const m = []; for (const p of chs(ch(comp, 'Component', 'Params'), 'Param')) m[+p.getAttribute('Index')] = this.deref(p); return m; }
+  blob(param) {
+    const skv = ch(param, 'StartKeyframeValue'); if (!skv) throw new Error('텍스트 값 없음');
+    let b64 = skv.textContent.replace(/\s/g, '');
+    if (!b64) { const c = this.hashContent(skv.getAttribute('BinaryHash')); if (!c) throw new Error('데이터 참조 없음'); b64 = c.replace(/\s/g, ''); }
+    return fromB64(b64);
+  }
+  clipEl(ti) { const sub = this.deref(ch(ti, 'ClipTrackItem', 'SubClip')); return { sub, clip: sub ? this.deref(ch(sub, 'Clip')) : null }; }
+  info(ti) {
+    const key = ti.getAttribute('ObjectID'); if (this._info.has(key)) return this._info.get(key);
+    const t = ch(ti, 'ClipTrackItem', 'TrackItem');
+    const o = { id: key, node: ti, audio: ti.tagName === 'AudioClipTrackItem', start: +txt(ch(t, 'Start')) || 0, end: +txt(ch(t, 'End')) || 0, name: '', masterUid: null, inPoint: 0, media: '', kind: 'other', natW: 0, natH: 0, layers: [], motion: null };
+    const { sub, clip } = this.clipEl(ti);
+    if (sub) { o.name = txt(ch(sub, 'Name')); const mc = ch(sub, 'MasterClip'); o.masterUid = mc ? mc.getAttribute('ObjectURef') : null; }
+    if (clip) {
+      const inN = clip.getElementsByTagName('InPoint')[0]; o.inPoint = +txt(inN) || 0;
+      const srcRef = clip.getElementsByTagName('Source')[0], src = this.deref(srcRef);
+      if (src) {
+        if (/SequenceSource$/.test(src.tagName)) {
+          o.kind = 'seq'; const sq = this.deref(src.getElementsByTagName('Sequence')[0]); const si = sq && this.seqs().find(x => x.node === sq); if (si) { o.natW = si.w; o.natH = si.h; o.media = si.name; }
+        } else {
+          const mref = src.getElementsByTagName('Media')[0], media = this.deref(mref);
+          if (media) {
+            o.media = txt(ch(media, 'FilePath')) || txt(ch(media, 'ActualMediaFilePath')) || txt(ch(media, 'Title'));
+            const vs = this.deref(ch(media, 'VideoStream')); const r = vs ? txt(ch(vs, 'FrameRect')).split(',').map(Number) : [];
+            if (r.length === 4) { o.natW = r[2] - r[0]; o.natH = r[3] - r[1]; }
+          }
+          const bn = baseName(o.media);
+          o.kind = o.audio ? 'audio' : VIDEO_EXT.test(bn) ? 'video' : IMG_EXT.test(bn) ? 'image' : AUD_EXT.test(bn) ? 'audio' : 'synthetic';
+        }
+      }
+    }
+    if (!o.audio) for (const c of this.comps(ti)) {
+      const mn = txt(ch(c, 'MatchName'));
+      if (mn === 'AE.ADBE Text') {
+        const p0 = this.params(c)[0]; const L = { comp: c, param: p0, text: null, parts: [], off: txt(ch(c, 'Component', 'Bypass')) === 'true', font: '' };
+        try { const bb = this.blob(p0); L.parts = textParts(bb, txt(ch(c, 'Component', 'InstanceName'))); L.text = L.parts.join(''); L.font = fbFont(bb, L.parts); } catch (e) { L.err = String(e.message || e); }
+        o.layers.push(L);
+      } else if (mn === 'AE.ADBE Motion' && !o.motion) {
+        const ps = this.params(c); const sk = txt(ch(ps[0], 'StartKeyframe')).split(',')[1] || '0.5:0.5'; const xy = sk.split(':').map(Number);
+        o.motion = { comp: c, pos: ps[0], scale: ps[1], x: xy[0], y: xy[1], s: parseFloat(txt(ch(ps[1], 'StartKeyframe')).split(',')[1]) || 100 };
+      }
+    }
+    if (o.layers.length) o.kind = 'text';
+    this._info.set(key, o); return o;
+  }
+
+  /* ----- 쓰기 ----- */
+  _append(n) { this.root.appendChild(this.doc.createTextNode('\n\t')); this.root.appendChild(n); this._reg(n); }
+  _fixHashes(c, src) {
+    const els = [...c.querySelectorAll('[BinaryHash]')]; if (c.hasAttribute('BinaryHash')) els.push(c);
+    for (const e of els) {
+      if (src && !e.textContent.trim()) { const h = e.getAttribute('BinaryHash'); if (!this.hashContent(h)) { const v = src.hashContent(h); if (v) e.textContent = v; } }
+      this._addHash(e);
+    }
+  }
+  /* 같은 프로젝트 안에서 클립 복제 (미디어·마스터클립은 공유) */
+  cloneClip(ti) { return this._fresh(this.cloneGraph(ti)); }
+  /* 모션(위치·크기) 정보가 기본값이라 파일에 없는 클립에 모션을 붙여 준다 */
+  ensureMotion(ti) {
+    const m = this.motionOf(ti); if (m) return m;
+    const chain = this.deref(ch(ti, 'ClipTrackItem', 'ComponentOwner', 'Components')); if (!chain) return null;
+    if (this._donor === undefined) {
+      this._donor = null;
+      for (const n of chs(this.root, 'VideoFilterComponent')) {
+        if (txt(ch(n, 'MatchName')) !== 'AE.ADBE Motion') continue; const ps = this.params(n);
+        if (ps.length < 6 || ps.some(p => !p || ch(p, 'Keyframes'))) continue;
+        const v = i => txt(ch(ps[i], 'StartKeyframe')).split(',')[1];
+        if (parseFloat(v(4)) === 0 && v(5) === '0.5:0.5' && ps.slice(7).every(p => parseFloat(txt(ch(p, 'StartKeyframe')).split(',')[1]) === 0)) { this._donor = n; break; }
+      }
+    }
+    if (!this._donor) return null;
+    const nc = this.cloneGraph(this._donor), ps = this.params(nc);
+    this.setPos(ps[0], 0.5, 0.5); for (const i of [1, 2]) { const sk = ch(ps[i], 'StartKeyframe'); const a = sk.textContent.split(','); a[1] = '100.'; sk.textContent = a.join(','); }
+    const dm = ch(chain, 'DefaultMotion'), di = ch(chain, 'DefaultMotionComponentID'), idEl = ch(nc, 'Component', 'ID');
+    if (idEl && di) idEl.textContent = di.textContent; if (dm) chain.removeChild(dm); if (di) chain.removeChild(di);
+    const cc = ch(chain, 'ComponentChain'); let list = ch(cc, 'Components');
+    if (!list) { list = this.doc.createElement('Components'); list.setAttribute('Version', '1'); cc.appendChild(list); }
+    for (const e of chs(list, 'Component')) e.setAttribute('Index', String(+e.getAttribute('Index') + 1));
+    const e = this.doc.createElement('Component'); e.setAttribute('Index', '0'); e.setAttribute('ObjectRef', nc.getAttribute('ObjectID')); list.insertBefore(e, list.firstChild);
+    return this.motionOf(ti);
+  }
+  cloneGraph(ti) {
+    const set = [], seen = new Set(), st = [ti.getAttribute('ObjectID')];
+    while (st.length) {
+      const id = st.pop(); if (seen.has(id)) continue; seen.add(id);
+      const n = this.byId.get(id); if (!n || (n !== ti && (LOCAL_STOP.test(n.tagName) || /TrackItem$/.test(n.tagName)))) continue;
+      set.push(id); for (const r of n.querySelectorAll('[ObjectRef]')) st.push(r.getAttribute('ObjectRef'));
+    }
+    const idmap = new Map(set.map(id => [id, String(++this.maxId)]));
+    for (const id of set) {
+      const c = this.byId.get(id).cloneNode(true); c.setAttribute('ObjectID', idmap.get(id));
+      this._remap(c, idmap, this, null);
+      this._append(c); this._fixHashes(c, null);
+    }
+    return this.byId.get(idmap.get(ti.getAttribute('ObjectID')));
+  }
+  _fresh(nv) {
+    const nid = ch(nv, 'ClipTrackItem', 'TrackItem', 'Node', 'ID'); if (nid) nid.textContent = String(++this.maxNode);
+    const { clip } = this.clipEl(nv); const cid = clip && clip.getElementsByTagName('ClipID')[0]; if (cid) cid.textContent = crypto.randomUUID();
+    return nv;
+  }
+  /* 복제본 안의 참조를 새 번호로 바꾼다. 다른 트랙 아이템(전환 효과 등)을 가리키는 참조는 떼어낸다. */
+  _remap(c, idmap, srcProj, depFn) {
+    for (const r of [...c.querySelectorAll('[ObjectRef]')]) {
+      const o = r.getAttribute('ObjectRef');
+      if (idmap.has(o)) { r.setAttribute('ObjectRef', idmap.get(o)); continue; }
+      const target = srcProj.byId.get(o);
+      if (target && /TrackItem$/.test(target.tagName)) { r.parentNode.removeChild(r); continue; }
+      if (depFn) { const nid = depFn(o); if (nid) r.setAttribute('ObjectRef', nid); else r.parentNode.removeChild(r); }
+    }
+  }
+  /* 다른 프로젝트(src)의 클립을 이 프로젝트로 가져온다 */
+  importClip(src, ti) {
+    let xmap = this.xmaps.get(src); if (!xmap) this.xmaps.set(src, xmap = new Map());
+    const dep = id => {
+      if (xmap.has(id)) return xmap.get(id);
+      const n = src.byId.get(id); if (!n) return null;
+      if (++this.imported > 60000) throw new Error('가져올 데이터가 너무 많습니다');
+      const nid = String(++this.maxId); xmap.set(id, nid);
+      const c = this.doc.importNode(n, true); c.setAttribute('ObjectID', nid);
+      for (const r of c.querySelectorAll('[ObjectRef]')) { const x = dep(r.getAttribute('ObjectRef')); if (x) r.setAttribute('ObjectRef', x); }
+      for (const r of c.querySelectorAll('[ObjectURef]')) uid(r.getAttribute('ObjectURef'));
+      this._append(c); this._fixHashes(c, src); return nid;
+    };
+    const uid = u => {
+      if (this.byUid.has(u)) return; const n = src.byUid.get(u); if (!n) return;
+      if (++this.imported > 60000) throw new Error('가져올 데이터가 너무 많습니다');
+      const c = this.doc.importNode(n, true); this.byUid.set(u, c);
+      for (const r of c.querySelectorAll('[ObjectRef]')) { const x = dep(r.getAttribute('ObjectRef')); if (x) r.setAttribute('ObjectRef', x); }
+      for (const r of c.querySelectorAll('[ObjectURef]')) uid(r.getAttribute('ObjectURef'));
+      this._append(c); this._fixHashes(c, src);
+    };
+    const set = [], seen = new Set(), st = [ti.getAttribute('ObjectID')];
+    while (st.length) {
+      const id = st.pop(); if (seen.has(id)) continue; seen.add(id);
+      const n = src.byId.get(id); if (!n || (n !== ti && (LOCAL_STOP.test(n.tagName) || /TrackItem$/.test(n.tagName)))) continue;
+      set.push(id); for (const r of n.querySelectorAll('[ObjectRef]')) st.push(r.getAttribute('ObjectRef'));
+    }
+    const idmap = new Map(set.map(id => [id, String(++this.maxId)]));
+    for (const id of set) {
+      const c = this.doc.importNode(src.byId.get(id), true); c.setAttribute('ObjectID', idmap.get(id));
+      this._remap(c, idmap, src, dep);
+      for (const r of c.querySelectorAll('[ObjectURef]')) uid(r.getAttribute('ObjectURef'));
+      this._append(c); this._fixHashes(c, src);
+    }
+    const nv = this._fresh(this.byId.get(idmap.get(ti.getAttribute('ObjectID'))));
+    const mc = ch(this.clipEl(nv).sub, 'MasterClip'); if (mc) this._ensureProjectItem(src, mc.getAttribute('ObjectURef'), uid);
+    return nv;
+  }
+  _ensureProjectItem(src, masterUid, uidFn) {
+    if (!src._cpi) { src._cpi = new Map(); for (const p of chs(src.root, 'ClipProjectItem')) { const m = ch(p, 'MasterClip'); if (m) src._cpi.set(m.getAttribute('ObjectURef'), p); } }
+    const p = src._cpi.get(masterUid); if (!p) return; const u = p.getAttribute('ObjectUID'); if (this.byUid.has(u)) return;
+    uidFn(u);
+    const items = ch(chs(this.root, 'RootProjectItem')[0], 'ProjectItemContainer', 'Items'); if (!items) return;
+    const e = this.doc.createElement('Item'); e.setAttribute('Index', String(chs(items, 'Item').length)); e.setAttribute('ObjectURef', u);
+    items.appendChild(this.doc.createTextNode('\t')); items.appendChild(e); items.appendChild(this.doc.createTextNode('\n\t\t\t'));
+  }
+  setTimes(ti, start, end, inPoint) {
+    const t = ch(ti, 'ClipTrackItem', 'TrackItem'); let st = ch(t, 'Start'); const en = ch(t, 'End');
+    if (start) { if (!st) { st = this.doc.createElement('Start'); t.insertBefore(st, en); t.insertBefore(this.doc.createTextNode('\n\t\t\t\t'), en); } st.textContent = String(start); }
+    else if (st) t.removeChild(st);
+    en.textContent = String(end);
+    const { clip } = this.clipEl(ti); if (!clip) return;
+    const outN = clip.getElementsByTagName('OutPoint')[0]; let inN = clip.getElementsByTagName('InPoint')[0]; if (!outN) return;
+    const i = inPoint == null ? (+txt(inN) || 0) : inPoint;
+    if (!inN && i) { inN = this.doc.createElement('InPoint'); outN.parentNode.insertBefore(inN, outN); outN.parentNode.insertBefore(this.doc.createTextNode('\n\t\t\t'), outN); }
+    if (inN) inN.textContent = String(i);
+    outN.textContent = String(i + (end - start));
+  }
+  setText(L, text, opt) {
+    if (!text) text = ' ';
+    if (!L.param || ch(L.param, 'Keyframes')) throw new Error('키프레임이 있는 텍스트는 바꿀 수 없습니다');
+    const parts = textParts(this.blob(L.param), txt(ch(L.comp, 'Component', 'InstanceName')));
+    // opt.segs: 색 구간별 글자를 직접 준다 (맞춤법 검사기처럼 "|"가 글자 자체일 수 있을 때)
+    const given = opt && opt.segs ? parts.map((_, i) => i === parts.length - 1 ? opt.segs.slice(i).join('') : (opt.segs[i] || '')).map(x => x || ' ') : null;
+    const segs = given || splitSegs(text, parts, opt && opt.auto);
+    // 영문·숫자 한 글자뿐인 조각("0", "X")은 텍스트 데이터에서 글자로 읽히지 않아 넣기에 실패한다. 앞 조각 끝의 띄어쓰기를 가져오고, 없으면(직접 준 조각이 아닐 때만) 뒤에 한 칸을 붙인다.
+    for (let i = 0; i < segs.length; i++) { const s = segs[i]; if (s.length !== 1 || s === ' ' || s.charCodeAt(0) > 127) continue; const pv = i > 0 ? segs[i - 1] : ''; if (pv.length > 1 && pv.endsWith(' ')) { segs[i - 1] = pv.slice(0, -1); segs[i] = ' ' + s; } else if (!given) segs[i] = s + ' '; }
+    text = segs.join('');
+    // 같은 글자의 조각이 섞이지 않게 먼저 임시 표식으로 바꾼 뒤 실제 글자를 넣는다
+    let nb = this.blob(L.param); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, '@@seg' + i + '@@', parts[i]); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, segs[i] || ' ', '@@seg' + i + '@@');
+    const skv = ch(L.param, 'StartKeyframeValue'); const h = skv.getAttribute('BinaryHash'), own = skv.textContent.trim() !== '';
+    if (own) { const all = this.hashIdx.get(h) || []; const others = all.filter(e => e !== skv && !e.textContent.trim()); if (others.length && !all.some(e => e !== skv && e.textContent.trim())) others[0].textContent = skv.textContent; }
+    this._delHash(skv);
+    const raw = skv.textContent, tail = own ? raw.slice(raw.trimEnd().length) : '';
+    skv.textContent = toB64(nb) + tail; skv.setAttribute('BinaryHash', randHash(nb.length)); this._addHash(skv);
+    const inst = ch(L.comp, 'Component', 'InstanceName');
+    if (inst) inst.textContent = text.replace(/[\r\n]+/g, ' ').trim();
+    L.text = text; L.parts = segs.slice();
+  }
+  /* 복제본의 텍스트 레이어 (info 캐시를 쓰지 않고 새로 읽는다) */
+  layersOf(ti) { this._info.delete(ti.getAttribute('ObjectID')); return this.info(ti).layers; }
+  motionOf(ti) { this._info.delete(ti.getAttribute('ObjectID')); return this.info(ti).motion; }
+  scaleParam(p, f) {
+    if (!p) return;
+    const sk = ch(p, 'StartKeyframe'); if (sk) { const a = sk.textContent.split(','); a[1] = fmtNum(parseFloat(a[1]) * f); sk.textContent = a.join(','); }
+    const kf = ch(p, 'Keyframes'); if (kf) kf.textContent = kf.textContent.split(';').map(k => { if (!k) return k; const a = k.split(','); a[1] = fmtNum(parseFloat(a[1]) * f); if (a.length > 6) { a[4] = String(parseFloat(a[4]) * f); a[6] = String(parseFloat(a[6]) * f); } return a.join(','); }).join(';');
+  }
+  setPos(p, x, y) {
+    if (!p) return; const sk = ch(p, 'StartKeyframe'); if (!sk) return; const a = sk.textContent.split(','); const xy = a[1].split(':');
+    a[1] = (x == null ? xy[0] : String(x)) + ':' + (y == null ? xy[1] : String(y)); sk.textContent = a.join(',');
+  }
+  addToTrack(track, tis) {
+    if (!tis.length) return;
+    const ci = ch(track, 'ClipTrack', 'ClipItems'); let list = ch(ci, 'TrackItems');
+    if (!list) { list = this.doc.createElement('TrackItems'); list.setAttribute('Version', '1'); ci.insertBefore(list, ci.firstChild); ci.insertBefore(this.doc.createTextNode('\n\t\t\t\t'), list); }
+    const all = chs(list, 'TrackItem').map(e => this.deref(e)).filter(Boolean).concat(tis);
+    const st = v => +txt(ch(v, 'ClipTrackItem', 'TrackItem', 'Start')) || +txt(ch(v, 'TransitionTrackItem', 'TrackItem', 'Start')) || 0;
+    all.sort((a, c) => st(a) - st(c));
+    while (list.firstChild) list.removeChild(list.firstChild);
+    all.forEach((v, i) => { list.appendChild(this.doc.createTextNode('\n\t\t\t\t\t')); const e = this.doc.createElement('TrackItem'); e.setAttribute('Index', String(i)); e.setAttribute('ObjectRef', v.getAttribute('ObjectID')); list.appendChild(e); });
+    list.appendChild(this.doc.createTextNode('\n\t\t\t\t'));
+  }
+}
+
+/* ---------------- 미드폼 분석 ---------------- */
+function analyzeMid(M) {
+  const seqs = M.seqs(); let best = null, bestN = -1;
+  for (const s of seqs) { let n = 0; for (const t of s.vtracks) n += M.items(t).length; if (n > bestN) { bestN = n; best = s; } }
+  if (!best) throw new Error('미드폼 프로젝트에서 시퀀스를 찾지 못했습니다');
+  const seq = best, V = seq.vtracks.map((t, i) => M.items(t).map(n => Object.assign(M.info(n), { track: i }))), A = seq.atracks.map((t, i) => M.items(t).map(n => Object.assign(M.info(n), { track: i })));
+  const all = V.flat(); const seqEnd = Math.max(1, ...all.map(c => c.end));
+  // 말자막 트랙 = 글자 클립이 가장 많은 트랙
+  let capTrack = -1, capN = 0; V.forEach((cl, i) => { const n = cl.filter(c => c.kind === 'text').length; if (n > capN) { capN = n; capTrack = i; } });
+  const nameCount = new Map(); for (const c of all) if (c.kind === 'image') nameCount.set(c.name, (nameCount.get(c.name) || 0) + 1);
+  const camTracks = []; V.forEach((cl, i) => { if (cl.length && cl.filter(c => c.kind === 'video' && !/transition/i.test(c.name)).length >= cl.length * 0.6 && cl.length >= 5) camTracks.push(i); });
+  const captions = [], fx = [], inserts = [], footage = [];
+  for (const c of all) {
+    const dur = c.end - c.start;
+    if (camTracks.includes(c.track) && c.kind === 'video') { c.role = 'footage'; footage.push(c); }
+    else if (c.track === capTrack && c.kind === 'text') { c.role = 'caption'; captions.push(c); }
+    else if (dur > 60 * TICKS || dur > seqEnd * 0.25) c.role = 'persistent';
+    else if (c.kind === 'image' && nameCount.get(c.name) > 20) c.role = 'decor';
+    else if (/transition/i.test(c.name) || c.name.startsWith('@')) c.role = 'transition';
+    else if (c.kind === 'text') { c.role = 'fx'; fx.push(c); }
+    else { c.role = 'insert'; inserts.push(c); }
+  }
+  captions.sort((a, b) => a.start - b.start); fx.sort((a, b) => a.start - b.start); inserts.sort((a, b) => a.start - b.start);
+  const voice = [], sfx = [], bgm = [];
+  A.forEach(cl => { const isVoice = cl.length >= footage.length * 0.3 && cl.length >= 5; for (const c of cl) { const dur = c.end - c.start; if (dur > 60 * TICKS) { c.role = 'bgm'; bgm.push(c); } else if (isVoice) { c.role = 'voice'; voice.push(c); } else if (!/transition/i.test(c.name) && !c.name.startsWith('@')) { c.role = 'sfx'; sfx.push(c); } } });
+  const cams = [...new Set(footage.map(c => baseName(c.media)))];
+  for (const c of fx) { const Lm = c.layers.filter(L => L.text).sort((a, b) => b.text.length - a.text.length)[0]; c.font = Lm ? Lm.font : ''; }
+  let refLines = [];
+  for (const s of seqs) { if (s === seq) continue; for (const t of s.vtracks) { const ls = M.items(t).map(n => M.info(n)).filter(c => c.kind === 'text' && c.layers.length === 1).map(c => (c.layers[0].text || '').split(String.fromCharCode(13)).join(' ').trim()).filter(Boolean); if (ls.length > refLines.length) refLines = ls; } }
+  refLines = refLines.filter((t, i) => t !== refLines[i - 1]);
+  return { seq, capTrack, camTracks, captions, fx, inserts, footage, voice, sfx, bgm, cams, seqEnd, refLines };
+}
+const sec = t => Math.round(t / TICKS * 10) / 10;
+function layerTexts(c) { return c.layers.map(L => (L.text || '').replace(/\r/g, ' / ').trim()).filter(Boolean); }
+/* Claude에게 보낼 대본: 말자막 + 효과자막 + 삽입물 */
+/* 훅 문구가 떠 있는 길이: 첫 조각이 짧으면(4초 이하) 조각 전체, 아니면 2.5초 */
+function hookLen(ranges, hook) { const d = ranges[0][1] - ranges[0][0]; return hook && hook.sec ? Math.min(d, hook.sec * TICKS) : d <= 4 * TICKS ? d : 2.5 * TICKS; }
+
+/* ---------------- 프리미어 받아쓰기(음성 텍스트) ----------------
+   마스터클립에 붙은 TranscriptClip → 단어별 시작·길이(원본 파일 기준 틱). */
+function readTranscript(P, masterUid) {
+  if (!P._tr) P._tr = new Map(); if (P._tr.has(masterUid)) return P._tr.get(masterUid);
+  let words = null; const mc = P.byUid.get(masterUid);
+  try {
+    for (const c of chs(ch(mc, 'Clips'), 'Clip')) {
+      const tc = P.deref(c); if (!tc || tc.tagName !== 'TranscriptClip') continue;
+      const docEl = P.deref(ch(tc, 'TranscriptTextSegments')), td = docEl && ch(docEl, 'TranscriptData'); if (!td) continue;
+      let b64 = td.textContent.replace(/\s/g, ''); if (!b64) { const v = P.hashContent(td.getAttribute('BinaryHash')); b64 = v ? v.replace(/\s/g, '') : ''; }
+      if (!b64) continue; const b = fromB64(b64), dv = new DataView(b.buffer, b.byteOffset, b.byteLength), N = b.length; if (N < 400) continue;
+      const fld = (t, i) => { const vt = t - dv.getInt32(t, true), vs = dv.getUint16(vt, true); if (4 + 2 * i >= vs) return 0; const o = dv.getUint16(vt + 4 + 2 * i, true); return o ? t + o : 0; };
+      const ind = p => p ? p + dv.getUint32(p, true) : 0, i64 = p => p ? Number(dv.getBigInt64(p, true)) : 0;
+      const vec = p => { const q = ind(p); if (!q) return []; const n = dv.getUint32(q, true), out = []; for (let k = 0; k < n; k++) out.push(q + 4 + 4 * k + dv.getUint32(q + 4 + 4 * k, true)); return out; };
+      const body = ind(fld(dv.getUint32(0, true), 0)), ws = [];
+      for (const seg of vec(fld(body, 0))) for (const w of vec(fld(seg, 3))) {
+        const sp = ind(fld(w, 2)); if (!sp) continue; const n = dv.getUint32(sp, true); if (!n || sp + 4 + n > N) continue;
+        let s; try { s = utf8.decode(b.subarray(sp + 4, sp + 4 + n)); } catch { continue; }
+        ws.push({ t: i64(fld(w, 0)), d: i64(fld(w, 1)), w: s });
+      }
+      if (ws.length) { words = ws.sort((a, z) => a.t - z.t); break; }
+    }
+  } catch { words = null; }
+  P._tr.set(masterUid, words); return words;
+}
+/* 타임라인 [t0,t1] 사이에 실제로 한 말(단어 목록, 타임라인 시각) */
+function spokenWords(M, an, t0, t1) {
+  const groups = []; const byTrack = new Map(); for (const c of an.voice) { if (!byTrack.has(c.track)) byTrack.set(c.track, []); byTrack.get(c.track).push(c); }
+  for (const g of byTrack.values()) groups.push(g); groups.push(an.footage);
+  for (const g of groups) {
+    const out = []; let any = false;
+    for (const c of g) { if (c.end <= t0 || c.start >= t1 || !c.masterUid) continue; const ws = readTranscript(M, c.masterUid); if (!ws) continue; any = true;
+      const a = Math.max(c.start, t0), b = Math.min(c.end, t1);
+      for (const w of ws) { const tt = c.start + (w.t - c.inPoint), mid = tt + w.d / 2; if (mid >= a && mid < b) out.push({ t: tt, e: tt + w.d, w: w.w }); } }
+    if (any) return out.sort((a, z) => a.t - z.t);
+  }
+  return null;
+}
+/* ---------------- 프로젝트에 이미 적혀 있는 자막 텍스트로 빈 구간 채우기 ----------------
+   본 시퀀스에서 효과자막에 가려 말자막이 빠진 곳도, 같은 프로젝트의 다른 시퀀스(자막 전체본)에는 글자가 적혀 있다.
+   앞뒤 말자막을 그 전체본에서 찾아 그 사이 글자를 그대로 가져오고, 시간은 받아쓰기 단어 시각에 맞춘다. */
+function normC(s) { return s.replace(/[\s.,!?~"'·…:;()\-]/g, ''); }
+function refIndex(an) {
+  if (an._ref) return an._ref;
+  let R = ''; const map = [];
+  (an.refLines || []).forEach((t, li) => { for (let ci = 0; ci < t.length; ci++) if (normC(t[ci])) { R += t[ci]; map.push([li, ci]); } });
+  // 1) 전체본에 딱 한 번만 나오는 말자막을 기준점으로 잡고, 순서가 맞는 것만 남긴다
+  const texts = an.captions.map(c => normC(layerTexts(c).join(' '))), uniq = texts.map(n => { if (n.length < 4) return -1; const a = R.indexOf(n); return a >= 0 && a === R.lastIndexOf(n) ? a : -1; });
+  const idx = []; uniq.forEach((p, i) => { if (p >= 0) idx.push(i); });
+  const best = idx.map(() => 1), prevOf = idx.map(() => -1); let top = -1;
+  idx.forEach((ci, k) => { for (let j = 0; j < k; j++) if (uniq[idx[j]] < uniq[ci] && best[j] + 1 > best[k]) { best[k] = best[j] + 1; prevOf[k] = j; } if (top < 0 || best[k] > best[top]) top = k; });
+  const capPos = texts.map(() => null); for (let k = top; k >= 0; k = prevOf[k]) { const ci = idx[k]; capPos[ci] = [uniq[ci], uniq[ci] + texts[ci].length]; }
+  // 2) 나머지는 앞뒤 기준점 사이에서만 찾는다
+  let lo = 0;
+  texts.forEach((n, i) => {
+    if (capPos[i]) { lo = capPos[i][1]; return; }
+    let hi = R.length; for (let j = i + 1; j < texts.length; j++) if (capPos[j] && uniq[j] >= 0) { hi = capPos[j][0]; break; }
+    if (n.length < 2) return; const at = R.indexOf(n, lo); if (at >= 0 && at + n.length <= hi) { capPos[i] = [at, at + n.length]; lo = at + n.length; }
+  });
+  return an._ref = { R, map, capPos };
+}
+/* 두 문자열의 최장 공통 부분열 정렬: g의 각 글자가 a의 몇 번째 글자와 맞는지 */
+function lcsAlign(g, a) {
+  const n = g.length, m = a.length, W = m + 1, D = new Uint16Array((n + 1) * W);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) D[i * W + j] = g[i] === a[j] ? D[(i + 1) * W + j + 1] + 1 : Math.max(D[(i + 1) * W + j], D[i * W + j + 1]);
+  const to = new Int32Array(n).fill(-1); let i = 0, j = 0;
+  while (i < n && j < m) { if (g[i] === a[j]) { to[i] = j; i++; j++; } else if (D[(i + 1) * W + j] >= D[i * W + j + 1]) i++; else j++; }
+  return { to, len: D[0] };
+}
+function refGap(an, g0, g1, words) {
+  const ref = refIndex(an); if (!ref.R) return null;
+  let pi = -1, ni = -1; an.captions.forEach((c, k) => { if (c.end <= g0 + 0.2 * TICKS) pi = k; if (ni < 0 && c.start >= g1 - 0.2 * TICKS) ni = k; });
+  const P = pi >= 0 ? ref.capPos[pi] : null, N = ni >= 0 ? ref.capPos[ni] : null; if (!P || !N) return null;
+  const a = P[1], b = N[0]; if (b <= a || b - a > 500) return null;
+  const G = ref.R.slice(a, b);
+  // 받아쓰기 글자열과 맞춰 본다: 너무 다르면(다른 편집본의 다른 대목) 쓰지 않는다
+  const A = [], At = []; for (const w of words || []) for (const ch of normC(w.w)) { A.push(ch); At.push(w.t); }
+  const al = A.length ? lcsAlign(G, A.join('')) : null;
+  if (al && al.len / G.length < 0.45) return null;
+  if (!al && (g1 - g0) / TICKS < G.length * 0.06) return null;
+  // 전체본의 줄 나눔 그대로 조각을 만든다
+  const parts = []; let s = 0;
+  for (let k = 1; k <= G.length; k++) if (k === G.length || ref.map[a + k][0] !== ref.map[a + s][0]) {
+    const li = ref.map[a + s][0], c0 = ref.map[a + s][1], c1 = ref.map[a + k - 1][1];
+    parts.push({ s, e: k, text: an.refLines[li].slice(c0, c1 + 1).trim() }); s = k;
+  }
+  // 전체본에는 있지만 이 편집본에서는 잘려 나간 말(구간 맨 앞·맨 뒤에서 받아쓰기와 안 맞는 4글자 이상)은 낱말 단위로 덜어 낸다
+  if (al && parts.length) {
+    const f = parts[0]; let k = f.s; while (k < f.e && al.to[k] < 0) k++;
+    if (k - f.s >= 4 && k < f.e) { const li = ref.map[a + k][0], ci = ref.map[a + k][1], line = an.refLines[li], sp = line.lastIndexOf(' ', ci); f.text = line.slice(sp + 1, ref.map[a + f.e - 1][1] + 1).trim(); f.s = k; }
+    const l = parts[parts.length - 1]; let q = l.e - 1; while (q >= l.s && al.to[q] < 0) q--;
+    if (l.e - 1 - q >= 4 && q >= l.s) { const li = ref.map[a + q][0], ci = ref.map[a + q][1], line = an.refLines[li], c0 = ref.map[a + l.s][1]; let sp = line.indexOf(' ', ci); if (sp < 0) sp = line.length; l.text = line.slice(c0, sp).trim(); }
+  }
+  const timeOf = p => { if (al) for (let k = p.s; k < p.e; k++) if (al.to[k] >= 0) return At[al.to[k]]; return g0 + (p.s / G.length) * (g1 - g0); };
+  const out = [];
+  for (const p of parts) {
+    if (!p.text) continue; let t = Math.min(g1, Math.max(g0, timeOf(p))); if (!out.length && t - g0 < 0.5 * TICKS) t = g0;
+    const prev = out[out.length - 1];
+    if (prev && t - prev.t0 < 0.5 * TICKS) { prev.text += ' ' + p.text; continue; }
+    out.push({ t0: t, t1: g1, text: p.text, src: 'ref' });
+  }
+  for (let k = 0; k + 1 < out.length; k++) out[k].t1 = out[k + 1].t0;
+  if (out.length && g1 - out[out.length - 1].t0 < 0.4 * TICKS && out.length > 1) { const last = out.pop(); out[out.length - 1].text += ' ' + last.text; out[out.length - 1].t1 = g1; }
+  return out.length ? out : null;
+}
+
+/* 구간 안의 "줄" 목록: 있는 말자막은 그대로, 말자막이 비는 곳은 받아쓰기로 채운다 */
+function spokenLines(M, an, ranges) {
+  const lines = []; let noTranscript = false;
+  ranges.forEach(([a, b], ri) => {
+    const caps = an.captions.filter(c => c.end > a && c.start < b).map(c => ({ t0: Math.max(c.start, a), t1: Math.min(c.end, b), text: layerTexts(c).join(' '), src: 'cap' })).filter(c => c.text && c.t1 - c.t0 > 0.15 * TICKS);
+    const gaps = []; let cur = a; for (const c of caps) { if (c.t0 - cur > 0.5 * TICKS) gaps.push([cur, c.t0]); cur = Math.max(cur, c.t1); } if (b - cur > 0.5 * TICKS) gaps.push([cur, b]);
+    const made = [];
+    for (const [g0, g1] of gaps) {
+      const ws = spokenWords(M, an, g0, g1);
+      const fromRef = refGap(an, g0, g1, ws); if (fromRef) { made.push(...fromRef); continue; }
+      if (ws === null) { noTranscript = true; continue; }
+      let line = null; const flush = end => { if (line && line.text) { line.t1 = Math.min(g1, end); made.push(line); } line = null; };
+      for (let i = 0; i < ws.length; i++) {
+        const w = ws[i], prev = ws[i - 1];
+        if (line && (line.text.length + w.w.length > 15 || /[.?!]$/.test(prev.w) || w.t - prev.e > 0.45 * TICKS)) flush(w.t);
+        if (!line) line = { t0: Math.max(g0, w.t), t1: 0, text: '', src: 'asr' };
+        line.text += (line.text ? ' ' : '') + w.w;
+      }
+      if (ws.length) flush(ws[ws.length - 1].e + 0.25 * TICKS);
+    }
+    for (const l of made) l.text = l.text.replace(/[.,]+$/g, '').replace(/[.,](\s)/g, '$1').trim();
+    const part = caps.concat(made.filter(l => l.text && l.t1 - l.t0 > 0.15 * TICKS)).sort((x, y) => x.t0 - y.t0);
+    for (const l of part) l.r = ri; lines.push(...part);
+  });
+  return { lines, noTranscript };
+}
+
+function transcript(an) {
+  return {
+    captions: an.captions.map((c, i) => ({ i, t0: sec(c.start), t1: sec(c.end), text: layerTexts(c).join(' ') })),
+    fx: an.fx.map(c => ({ id: c.id, t0: sec(c.start), t1: sec(c.end), texts: layerTexts(c) })),
+    inserts: an.inserts.map(c => ({ id: c.id, t0: sec(c.start), t1: sec(c.end), name: c.name })),
+  };
+}
+
+/* ---------------- 쇼츠 디자인 프로젝트 분석 ---------------- */
+function analyzeShorts(S) {
+  const seqs = S.seqs().filter(s => s.h > s.w); if (!seqs.length) throw new Error('쇼츠 디자인 프로젝트에서 세로 시퀀스를 찾지 못했습니다');
+  let seq = seqs[0], bn = -1; for (const s of seqs) { let n = 0; for (const t of s.vtracks) n += S.items(t).length; if (n > bn) { bn = n; seq = s; } }
+  const V = seq.vtracks.map((t, i) => S.items(t).map(n => Object.assign(S.info(n), { track: i }))); const all = V.flat();
+  let end = 0; for (const c of all) end = Math.max(end, c.end); for (const t of seq.atracks) for (const n of S.items(t)) end = Math.max(end, S.info(n).end);
+  const texts = all.filter(c => c.kind === 'text').sort((a, b) => a.start - b.start);
+  const has = (c, re) => c.layers.some(L => re.test(L.text || ''));
+  const T = {};
+  T.cap = texts.find(c => c.layers.length === 1 && /원장.*말자막/.test(c.layers[0].text || '')) || texts.find(c => c.layers.length === 1 && has(c, /말자막/)) || null;
+  T.emph = texts.find(c => c.layers.length >= 2 && has(c, /강조/) && has(c, /첨자/)) || null;
+  T.title = texts.find(c => c.layers.length >= 2 && has(c, /부제목/)) || null;
+  T.black = all.find(c => /^black video$/i.test(c.name) || c.name === '검정 비디오') || null;
+  T.emoji = T.emph ? all.filter(c => c.kind === 'image' && c.track !== T.emph.track && c.start < T.emph.end && c.end > T.emph.start && !/guide/i.test(c.name)).sort((a, b) => (a.end - a.start) - (b.end - b.start))[0] || null : null;
+  const idx = (c, re) => c ? c.layers.findIndex(L => re.test(L.text || '')) : -1;
+  const variants = texts.filter(c => c.start < 60 * TICKS && c.layers.length >= 2 && has(c, /강조/) && has(c, /첨자/)).map(c => { const bi = idx(c, /강조/), si = idx(c, /첨자/); return { clip: c, big: bi, small: si, two: !c.layers[si].off, font: c.layers[bi].font, emoji: all.filter(x => x.kind === 'image' && x.track !== c.track && x.start < c.end && x.end > c.start && !/guide/i.test(x.name)).sort((a, b) => (a.end - a.start) - (b.end - b.start))[0] || null }; });
+  const designs = [...new Set(variants.map(v => v.font))];
+  const roles = { emphBig: idx(T.emph, /강조/), emphSmall: idx(T.emph, /첨자/), titleSub: idx(T.title, /부제목/) };
+  roles.titleMain = T.title ? T.title.layers.findIndex((L, i) => i !== roles.titleSub) : -1;
+  // 이모지 빈
+  const emojis = [];
+  for (const b of chs(S.root, 'BinProjectItem')) {
+    if (!/이모지|emoji/i.test(txt(ch(b, 'ProjectItem', 'Name')))) continue;
+    for (const it of chs(ch(b, 'ProjectItemContainer', 'Items'), 'Item')) { const p = S.deref(it); if (p && p.tagName === 'ClipProjectItem') { const m = ch(p, 'MasterClip'); emojis.push({ name: txt(ch(p, 'ProjectItem', 'Name')), masterUid: m && m.getAttribute('ObjectURef') }); } }
+  }
+  // 이미 만든 쇼츠에서 카메라별 위치·크기 배우기
+  const cams = {}; for (const c of all) if (c.kind === 'video' && c.motion) { const k = baseName(c.media); (cams[k] = cams[k] || []).push(c.motion); }
+  const learned = {}; for (const k in cams) { const xs = cams[k].map(m => m.x).sort((a, b) => a - b); learned[k] = { x: xs[xs.length >> 1] }; }
+  return { seq, end, T, roles, emojis, learned, variants, designs, texts: texts.filter(c => c.start < 120 * TICKS) };
+}
+
+/* ---------------- 쇼츠 한 편 만들기 ----------------
+   plan = { ranges:[[t0,t1]…](미드폼 틱), title:{main,sub}, hook:{big,small,emoji}|null,
+            emph:[{t0,t1,big,small,emoji}], inserts:[{id,mode:'fill'|'board'|'keep'}] }
+   opt  = { factor, camX:{파일명:x}, gapSec, boardId }                                           */
+function buildShort(M, S, an, sh, plan, opt) {
+  const log = [], warn = m => log.push(m);
+  const fr = sh.seq.frame, snap = t => Math.round(t / fr) * fr;
+  const ranges = plan.ranges.map(r => [Math.min(r[0], r[1]), Math.max(r[0], r[1])]).filter(r => r[1] - r[0] >= fr);
+  if (!ranges.length) throw new Error('구간이 비어 있습니다');
+  const T0 = snap(sh.end + (opt.gapSec == null ? 10 : opt.gapSec) * TICKS);
+  const segs = []; let cur = T0; for (const [a, b] of ranges) { segs.push({ a, b, d: cur }); cur += b - a; }
+  const Tend = snap(cur);
+  /* 미드폼의 [s,e] 구간이 쇼츠에서 차지하는 조각들 */
+  const pieces = (s, e, only) => { const out = []; for (const g of segs) { if (only != null && segs[only] !== g) continue; const a = Math.max(s, g.a), b = Math.min(e, g.b); if (b - a < fr * 0.5) continue; const ds = snap(g.d + a - g.a), de = snap(g.d + b - g.a); if (de > ds) out.push({ a, b, ds, de }); } return out; };
+  const vt = sh.seq.vtracks, at = sh.seq.atracks, vAdd = vt.map(() => []), aAdd = at.map(() => []);
+  const kx = sh.seq.w / an.seq.w, ky = sh.seq.h / an.seq.h, factor = opt.factor || Math.round(ky * 101.25) / 100;
+  const keep = new Map((plan.inserts || []).map(x => [String(x.id), x.mode || 'keep']));
+  const insertClips = an.inserts.concat(an.fx).filter(c => keep.has(c.id));
+  const insTracks = [...new Set(insertClips.map(c => c.track))].sort((a, b) => a - b);
+  const nCam = an.camTracks.length; let top = vt.length - 1;
+  const L = { bg: nCam, ins0: nCam + 1 };
+  let nIns = insTracks.length; const need = nCam + 1 + nIns + 4;
+  if (need > vt.length) { nIns = Math.max(1, vt.length - nCam - 5); warn(`쇼츠 시퀀스의 비디오 트랙이 부족해 삽입물 ${insTracks.length}개 층을 ${nIns}개 트랙에 겹쳐 놓았습니다.`); }
+  L.emoji = L.ins0 + nIns; L.emph = L.emoji + 1; L.cap = L.emph + 1; L.title = L.cap + 1;
+  if (L.title > top) throw new Error('쇼츠 시퀀스에 비디오 트랙이 너무 적습니다 (최소 ' + (need) + '개 필요)');
+  const put = (arr, i, n) => arr[Math.min(i, arr.length - 1)].push(n);
+  const bring = (c, p) => { const n = S.importClip(M, c.node); S.setTimes(n, p.ds, p.de, Math.round(c.inPoint + (p.a - c.start))); return n; };
+
+  // 1) 촬영 영상 + 목소리
+  for (const c of an.footage) for (const p of pieces(c.start, c.end)) {
+    const n = bring(c, p), m = S.ensureMotion(n);
+    if (m) { S.scaleParam(m.scale, factor); const x = (opt.camX || {})[baseName(c.media)]; S.setPos(m.pos, x == null ? null : x, null); }
+    put(vAdd, an.camTracks.indexOf(c.track), n);
+  }
+  for (const c of an.voice.concat(an.sfx)) for (const p of pieces(c.start, c.end)) put(aAdd, c.track, bring(c, p));
+  // 2) 음악: 쇼츠 길이만큼
+  const music = an.bgm.find(c => c.start < ranges[0][1] && c.end > ranges[0][0]) || an.bgm[0];
+  if (music) { try { const n = S.importClip(M, music.node); S.setTimes(n, T0, Tend, music.inPoint); put(aAdd, music.track, n); } catch (e) { warn('음악을 옮기지 못했습니다: ' + e.message); } }
+  else warn('미드폼에서 음악 클립을 찾지 못했습니다.');
+  // 3) 삽입 이미지·라벨
+  const board = opt.boardId ? an.inserts.find(c => c.id === String(opt.boardId)) : an.inserts.find(c => /대판|board/i.test(c.name));
+  for (const c of insertClips) for (const p of pieces(c.start, c.end)) {
+    const mode = keep.get(c.id), n = bring(c, p), m = c.kind === 'text' || mode === 'keep' ? null : S.ensureMotion(n);
+    if (c.kind === 'text') { for (const comp of S.comps(n)) if (txt(ch(comp, 'MatchName')) === 'AE.ADBE Text') { const ps = S.params(comp); S.scaleParam(ps[3], kx); S.scaleParam(ps[4], kx); } }
+    else if (m && mode === 'fill') S.scaleParam(m.scale, ky);
+    else if (m && mode === 'board') {
+      S.scaleParam(m.scale, kx);
+      const bgSrc = board && board !== c ? board : null;
+      if (bgSrc) { const b = S.importClip(M, bgSrc.node); S.setTimes(b, p.ds, p.de, bgSrc.inPoint); const bm = S.ensureMotion(b); if (bm) S.scaleParam(bm.scale, ky); put(vAdd, L.bg, b); }
+      else if (sh.T.black) { const b = S.cloneClip(sh.T.black.node); S.setTimes(b, p.ds, p.de, null); put(vAdd, L.bg, b); }
+    }
+    put(vAdd, L.ins0 + Math.min(insTracks.indexOf(c.track), nIns - 1), n);
+  }
+  // 4) 말자막
+  const capList = plan.captions || an.captions.map(c => ({ t0: c.start, t1: c.end, text: layerTexts(c).join(' ') }));
+  if (sh.T.cap) for (const c of capList) { const text = (c.text || '').trim(); if (!text) continue; for (const p of pieces(c.t0, c.t1, c.r)) { const n = S.cloneClip(sh.T.cap.node); S.setTimes(n, p.ds, p.de, null); S.setText(S.layersOf(n)[0], text); vAdd[L.cap].push(n); } }
+  else warn('쇼츠 말자막 견본을 찾지 못해 말자막을 넣지 않았습니다.');
+  // 5) 강조 자막 + 이모지 (훅 포함)
+  const emph = [];
+  if (plan.hook && plan.hook.style !== 'none' && (plan.hook.big || plan.hook.small)) emph.push({ ds: T0, de: snap(T0 + hookLen(ranges, plan.hook)), hook: true, ...plan.hook });
+  for (const e of plan.emph || []) for (const p of pieces(e.t0, e.t1, e.r)) emph.push({ ...e, ds: p.ds, de: p.de });
+  emph.sort((a, b) => a.ds - b.ds); for (let i = 0; i + 1 < emph.length; i++) if (emph[i].de > emph[i + 1].ds) emph[i].de = emph[i + 1].ds;
+  if (!sh.T.emph && emph.length) warn('쇼츠 강조 자막 견본을 찾지 못해 효과자막을 넣지 않았습니다.');
+  if (sh.T.emph) for (const e of emph) {
+    if (e.de - e.ds < fr) continue;
+    const two = !!(e.small || '').trim(), vs = sh.variants || [], font = (sh.designs || [])[e.design || 0];
+    const V = (!sh.emphForced && (vs.find(v => v.font === font && v.two === two) || vs.find(v => v.two === two) || vs.find(v => v.font === font))) || { clip: sh.T.emph, big: sh.roles.emphBig, small: sh.roles.emphSmall, emoji: sh.T.emoji };
+    const n = S.cloneClip(V.clip.node); S.setTimes(n, e.ds, e.de, null); const ls = S.layersOf(n);
+    if (V.big >= 0) S.setText(ls[V.big], e.big || ' ');
+    if (V.small >= 0 && !ls[V.small].off) S.setText(ls[V.small], e.small || ' ');
+    const emojiTpl = V.emoji || sh.T.emoji;
+    vAdd[L.emph].push(n);
+    if (e.hook && e.style !== 'over' && sh.T.black) { const b = S.cloneClip(sh.T.black.node); S.setTimes(b, e.ds, e.de, null); vAdd[L.bg].push(b); }
+    if (emojiTpl) {
+      const g = S.cloneClip(emojiTpl.node); S.setTimes(g, e.ds, e.de, null);
+      const em = e.emoji && sh.emojis.find(x => x.name === e.emoji);
+      if (em) { try { retarget(S, g, em, emojiTpl); } catch (er) { warn(`이모지 "${e.emoji}"를 넣지 못해 견본 틀을 남겼습니다: ${er.message}`); } }
+      vAdd[L.emoji].push(g);
+    }
+  }
+  // 6) 제목
+  if (sh.T.title && plan.title) {
+    const n = S.cloneClip(sh.T.title.node); S.setTimes(n, T0, Tend, null); const ls = S.layersOf(n);
+    if (sh.roles.titleMain >= 0 && plan.title.main) S.setText(ls[sh.roles.titleMain], plan.title.main);
+    if (sh.roles.titleSub >= 0 && plan.title.sub) S.setText(ls[sh.roles.titleSub], plan.title.sub);
+    vAdd[L.title].push(n);
+  } else if (!sh.T.title) warn('쇼츠 제목 견본을 찾지 못해 제목을 넣지 않았습니다.');
+  // 같은 트랙 안에서 겹치지 않게 다듬고 트랙에 올린다
+  const tidy = arr => { const st = v => +txt(ch(v, 'ClipTrackItem', 'TrackItem', 'Start')) || 0, en = v => +txt(ch(v, 'ClipTrackItem', 'TrackItem', 'End')); arr.sort((a, b) => st(a) - st(b)); const out = []; for (const v of arr) { const prev = out[out.length - 1]; if (prev && en(prev) > st(v)) { if (st(v) - st(prev) >= fr) S.setTimes(prev, st(prev), st(v), null); else continue; } out.push(v); } return out; };
+  vAdd.forEach((arr, i) => S.addToTrack(vt[i], tidy(arr))); aAdd.forEach((arr, i) => S.addToTrack(at[i], tidy(arr)));
+  sh.end = Tend;
+  return { start: T0, end: Tend, log, counts: { video: vAdd.reduce((a, c) => a + c.length, 0), audio: aAdd.reduce((a, c) => a + c.length, 0) } };
+}
+/* 견본 이미지 클립이 다른 이미지(이모지)를 가리키게 한다 */
+function retarget(S, ti, em, tplInfo) {
+  const master = S.byUid.get(em.masterUid); if (!master) throw new Error('이모지 원본 없음');
+  let media = null, natW = 0; for (const r of master.querySelectorAll('[ObjectRef]')) { const c = S.byId.get(r.getAttribute('ObjectRef')); if (c && c.tagName === 'VideoClip') { const src = S.deref(c.getElementsByTagName('Source')[0]); const mref = src && src.getElementsByTagName('Media')[0]; if (mref) { media = mref.getAttribute('ObjectURef'); const md = S.byUid.get(media), vs = md && S.deref(ch(md, 'VideoStream')); const fr = vs ? txt(ch(vs, 'FrameRect')).split(',').map(Number) : []; if (fr.length === 4) natW = fr[2] - fr[0]; } break; } }
+  if (!media) throw new Error('이모지 미디어 없음');
+  const { sub, clip } = S.clipEl(ti); const srcRef = clip.getElementsByTagName('Source')[0], oldSrc = S.deref(srcRef);
+  const ns = oldSrc.cloneNode(true); ns.setAttribute('ObjectID', String(++S.maxId)); ns.getElementsByTagName('Media')[0].setAttribute('ObjectURef', media); S._append(ns);
+  srcRef.setAttribute('ObjectRef', ns.getAttribute('ObjectID'));
+  ch(sub, 'MasterClip').setAttribute('ObjectURef', em.masterUid); const nm = ch(sub, 'Name'); if (nm) nm.textContent = em.name;
+  const m = S.motionOf(ti); if (m && natW && tplInfo.natW) S.scaleParam(m.scale, tplInfo.natW / natW);
+}
+
+/* ================= 효과자막 자동 편집기용 ================= */
+const oneLine = t => [...(t || '')].map(ch => { const c = ch.charCodeAt(0); return c < 32 || c === 8232 || c === 8233 ? ' ' : ch; }).join('').split(' ').filter(Boolean).join(' ');
+const isPlaceholder = t => /자막|들어가는|담을 수|들어갑니다/.test(t);
+/* 시퀀스 맨 위에 빈 비디오 트랙을 하나 만든다 */
+function addVideoTrack(P, seqNode) {
+  let grp = null; for (const tg of chs(ch(seqNode, 'TrackGroups'), 'TrackGroup')) { const g = P.deref(ch(tg, 'Second')); if (g && g.tagName === 'VideoTrackGroup') grp = g; }
+  const tg = ch(grp, 'TrackGroup'), list = ch(tg, 'Tracks'), refs = chs(list, 'Track'), last = P.deref(refs[refs.length - 1]);
+  const idx = refs.length, nextEl = ch(tg, 'NextTrackID'), id = nextEl ? +nextEl.textContent : idx + 1;
+  const n = last.cloneNode(true), uid = crypto.randomUUID(); n.setAttribute('ObjectUID', uid);
+  const ct = ch(n, 'ClipTrack'); for (const part of ['ClipItems', 'TransitionItems']) { const el = ch(ct, part); for (const k of chs(el, 'TrackItems')) el.removeChild(k); const ix = ch(el, 'Index'); if (ix) ix.textContent = String(idx); }
+  const tr = ch(ct, 'Track'), ix = ch(tr, 'Index'), idEl = ch(tr, 'ID'); if (ix) ix.textContent = String(idx); if (idEl) idEl.textContent = String(id);
+  P._append(n);
+  const e = P.doc.createElement('Track'); e.setAttribute('Index', String(idx)); e.setAttribute('ObjectURef', uid); list.appendChild(P.doc.createTextNode('\t')); list.appendChild(e); list.appendChild(P.doc.createTextNode('\n\t\t\t'));
+  if (nextEl) nextEl.textContent = String(id + 1);
+  return n;
+}
+/* 클립을 지우지 않고 꺼 둔다 (프리미어의 "사용" 해제와 같다) */
+function muteClip(P, ti) { const c = ch(ti, 'ClipTrackItem'); if (!c) return; let m = ch(c, 'IsMuted'); if (!m) { m = P.doc.createElement('IsMuted'); c.appendChild(P.doc.createTextNode('\t')); c.appendChild(m); c.appendChild(P.doc.createTextNode('\n\t\t')); } m.textContent = 'true'; }
+
+/* 그래픽 안의 한 레이어를 숨기거나 보이게 한다 (첨자 줄을 안 쓸 때 숨긴다) */
+function setBypass(P, comp, on) {
+  const c = ch(comp, 'Component'); if (!c) return; let b = ch(c, 'Bypass');
+  if (!b) { if (!on) return; b = P.doc.createElement('Bypass'); const before = ch(c, 'DisplayName'); c.insertBefore(b, before); c.insertBefore(P.doc.createTextNode('\n\t\t\t'), before); }
+  b.textContent = on ? 'true' : 'false';
+}
+/* 템플릿 프로젝트에서 효과자막 디자인 목록을 읽는다.
+   디자인 = 이름 레이어(예: "일반4", "상황 - 감성") + 첨자 줄 + 본문 줄. 두 줄짜리는 1초 뒤에 뜨는 둘째 클립이 붙는다. */
+function analyzeTemplate(Tp) {
+  let seq = null, bn = -1; for (const s of Tp.seqs()) { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; if (n > bn) { bn = n; seq = s; } }
+  if (!seq || bn < 1) throw new Error('템플릿 프로젝트에서 자막이 들어 있는 시퀀스를 찾지 못했습니다');
+  const V = seq.vtracks.map((t, i) => Tp.items(t).map(n => Object.assign(Tp.info(n), { track: i }))).flat();
+  const A = seq.atracks.map((t, i) => Tp.items(t).map(n => Object.assign(Tp.info(n), { track: i }))).flat().filter(c => c.end - c.start < 20 * TICKS && !/intro|transition|ending|preview/i.test(c.name));
+  const texts = V.filter(c => c.kind === 'text').sort((a, b) => a.start - b.start || a.track - b.track), used = new Set(), designs = [];
+  for (const c of texts) {
+    if (used.has(c.id)) continue;
+    const ls = c.layers.map(L => oneLine(L.text)), si = ls.findIndex(t => /^첨자\s*자막/.test(t)); let name, slots, nameLayer = -1;
+    if (si >= 0) {
+      // 디자인 이름은 화면에 안 보이게 꺼 둔 글자 레이어에 적혀 있다. 없으면 견본 문구가 아닌 짧은 글자를 이름으로 본다.
+      let ni = ls.findIndex((t, i) => i !== si && c.layers[i].off && t && /[가-힣A-Za-z]/.test(t));
+      if (ni < 0) ni = ls.findIndex((t, i) => i !== si && t && !isPlaceholder(t) && [...t].length <= 16 && !/^[QA][|]?$/.test(t) && /[가-힣]/.test(t));
+      const mi = ls.findIndex((t, i) => i !== si && i !== ni && isPlaceholder(t));
+      if (ni < 0 || mi < 0) continue; name = ls[ni]; nameLayer = ni; slots = { small: si, main: mi };
+    } else if (c.layers.length === 1 && /(포인트|멘트) 자막입니다/.test(ls[0])) { name = ls[0].replace(/[“”"]/g, '').replace(/\s*자막입니다.*/, '').trim(); slots = { main: 0 }; }
+    else continue;
+    used.add(c.id);
+    const d = { name, base: name, nameLayer, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[slots.main].font };
+    const fol = texts.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS && x.layers.some(L => isPlaceholder(oneLine(L.text))));
+    if (fol) { const fm = fol.layers.findIndex(L => isPlaceholder(oneLine(L.text))); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
+    d.sfx = A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name }));
+    designs.push(d);
+  }
+  const count = {}; for (const d of designs) count[d.name] = (count[d.name] || 0) + 1;
+  const seen = {}; for (const d of designs) if (count[d.name] > 1) { seen[d.name] = (seen[d.name] || 0) + 1; d.name = d.name + ' ' + seen[d.name]; }
+  if (!designs.length) throw new Error('템플릿에서 효과자막 디자인을 찾지 못했습니다. "첨자 자막" 줄이 있는 견본이 필요합니다.');
+  return { seq, designs };
+}
+
+/* 완성 프로젝트에서 그 업체의 효과자막 쓰는 방식을 읽는다 */
+function learnStyle(P, cat) {
+  const an = analyzeMid(P), fx = an.fx.slice().sort((a, b) => a.start - b.start), used = new Set(), ex = [], usage = {};
+  const byBase = new Map(); for (const d of cat.designs) { const k = d.base + (d.two ? '|2' : '|1'); if (!byBase.has(k)) byBase.set(k, d); }
+  const simple = cat.designs.filter(d => d.nameLayer < 0);
+  for (const c of fx) {
+    if (used.has(c.id)) continue; const ls = c.layers.map(L => oneLine(L.text));
+    const fol = fx.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.4 * TICKS);
+    let d = null; for (const t of ls) { d = byBase.get(t + (fol ? '|2' : '|1')) || byBase.get(t + '|1') || byBase.get(t + '|2'); if (d) break; }
+    let small = '', main = '', main2 = '', pos = null;
+    if (d) { const s = d.clips[0].slots; small = c.layers[s.small] && !c.layers[s.small].off && !/^첨자\s*자막/.test(ls[s.small] || '') ? ls[s.small] : ''; main = ls[s.main] || ''; if (fol && d.two) { used.add(fol.id); const fl = fol.layers.map(L => oneLine(L.text)).filter(t => t && t !== d.base); main2 = fl[fl.length - 1] || ''; const fi = fol.layers.findIndex(L => oneLine(L.text) === main2), xb = layerX(P, c.layers[s.main]), xf = fi >= 0 ? layerX(P, fol.layers[fi]) : null; if (xb != null && xf != null) pos = { n1: [...main].length, n2: [...main2].length, xb, xf }; } }
+    else if (c.layers.length === 1 && [...ls[0]].length >= 6) { d = simple.find(x => x.font && x.font === c.layers[0].font); if (!d) continue; main = ls[0]; }
+    else continue;
+    used.add(c.id);
+    const said = spokenLines(P, an, [[c.start, c.end]]).lines.map(l => l.text).join(' ');
+    const s = an.sfx.find(a => Math.abs(a.start - c.start) < 0.2 * TICKS);
+    usage[d.name] = (usage[d.name] || 0) + 1;
+    ex.push({ said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
+  }
+  const first = an.captions.length ? an.captions[0].start : 0, last = an.captions.length ? an.captions[an.captions.length - 1].end : an.seqEnd;
+  // 효과자막 없이 말자막으로만 나간 말 (어떤 말에는 넣지 않는지 배우는 용도)
+  const spans = fx.map(c => [c.start, c.end]), plain = spokenLines(P, an, [[first, last]]).lines.filter(l => !spans.some(z => l.t0 < z[1] && l.t1 > z[0])).map(l => l.text).filter(t => [...t].length >= 6);
+  const step = Math.max(1, Math.floor(plain.length / 40));
+  return { minutes: Math.max(0.5, (last - first) / TICKS / 60), count: ex.length, usage, examples: ex, skipped: plain.filter((_, i) => i % step === 0).slice(0, 40) };
+}
+/* 텍스트 레이어의 가로 위치(레이어 Position의 x) */
+function layerX(P, L) { if (!L) return null; const p = P.params(L.comp)[2], sk = p && ch(p, 'StartKeyframe'); if (!sk) return null; const v = (sk.textContent.split(',')[1] || '').split(':'); return v.length === 2 ? parseFloat(v[0]) : null; }
+function mergeStyles(list) {
+  const out = { minutes: 0, count: 0, usage: {}, examples: [], skipped: [], projects: list.length };
+  for (const s of list) { out.minutes += s.minutes; out.count += s.count; for (const k in s.usage) out.usage[k] = (out.usage[k] || 0) + s.usage[k]; out.examples.push(...s.examples); out.skipped.push(...(s.skipped || [])); }
+  out.perMin = out.minutes ? Math.round(out.count / out.minutes * 10) / 10 : 0;
+  out.avgDur = out.examples.length ? Math.round(out.examples.reduce((a, e) => a + e.dur, 0) / out.examples.length * 10) / 10 : 3;
+  return out;
+}
+
+/* 한 줄의 글자를 견본의 색 구간 수에 맞춰 나눈다. "앞|강조|뒤"처럼 직접 나눠 주면 그대로 쓰고,
+   나눔 표시가 없으면(auto) 견본의 구간 비율대로 낱말 경계에서 나눠 색이 빠지지 않게 한다. */
+function splitSegs(text, parts, auto) {
+  const k = parts.length; let s = text.split('|'); const len = t => [...t].length;
+  if (k < 2) return [s.join('') || ' '];
+  if (s.length === 1) {
+    if (!auto) return [s[0] || ' '].concat(Array(k - 1).fill(' '));
+    const words = s[0].split(' ').filter(Boolean), total = parts.reduce((a, p) => a + Math.max(1, len(p.trim())), 0), all = words.reduce((a, w) => a + len(w), 0), out = [];
+    let wi = 0, used = 0, acc = 0;
+    for (let i = 0; i < k; i++) { acc += Math.max(1, len(parts[i].trim())); const target = i === k - 1 ? Infinity : all * acc / total, seg = []; while (wi < words.length && used + len(words[wi]) / 2 <= target) { seg.push(words[wi]); used += len(words[wi]); wi++; } out.push(seg); }
+    const hi = k >= 3 ? 1 : 0; // 강조색 구간이 비지 않게 한다
+    if (!out[hi].length) { const next = out.findIndex((x, i) => i > hi && x.length); if (next > 0) out[hi].push(out[next].shift()); else { const prev = out.findIndex(x => x.length > 1); if (prev >= 0 && prev < hi) out[hi].push(out[prev].pop()); } }
+    const txt = out.map(x => x.join(' '));
+    return txt.map((t, i) => t ? (txt.slice(i + 1).some(Boolean) ? t + ' ' : t) : ' ');
+  }
+  if (s.length > k) s = s.slice(0, k - 1).concat(s.slice(k - 1).join(''));
+  while (s.length < k) s.push(' ');
+  return s.map(x => x || ' ');
+}
+
+/* 컷편집본(M)에 효과자막을 넣는다. items = [{t0,t1,design,small,main,main2,pos}] (틱, 디자인 이름)
+   opt = { bump: 효과자막 구간의 영상 확대값(기본 10, 0이면 안 함) } */
+function buildFx(M, Tp, an, cat, items, opt) {
+  opt = opt || {}; const log = [], seq = an.seq, fr = seq.frame, snap = t => Math.round(t / fr) * fr;
+  if (cat.seq.w !== seq.w || cat.seq.h !== seq.h) log.push(`템플릿(${cat.seq.w}×${cat.seq.h})과 영상(${seq.w}×${seq.h})의 화면 크기가 달라 자막 위치가 어긋날 수 있습니다.`);
+  // 컷 경계(= 말이 시작하고 끝나는 지점)에 붙인다
+  const cutSet = new Set(); for (const c of an.footage) { cutSet.add(c.start); cutSet.add(c.end); } const cuts = [...cutSet].sort((a, b) => a - b);
+  const toCut = t => { let best = t, d = 0.35 * TICKS; for (const x of cuts) { const dd = Math.abs(x - t); if (dd < d) { d = dd; best = x; } else if (x > t + d) break; } return best; };
+  // 놓을 트랙: V3~V6 가운데 그 시간에 비어 있는 곳. 없으면 맨 위에 새 트랙.
+  const tracks = seq.vtracks.slice(), occ = tracks.map(t => M.items(t).map(n => { const i = M.info(n); return [i.start, i.end]; })), adds = tracks.map(() => []), cand = [];
+  for (let i = 2; i <= 5; i++) if (i < tracks.length && !an.camTracks.includes(i) && i !== an.capTrack) cand.push(i);
+  const usedTracks = new Set();
+  const place = (node, a, b, above) => {
+    for (const i of cand) { if (i <= above) continue; if (!occ[i].some(z => a < z[1] && b > z[0])) { occ[i].push([a, b]); adds[i].push(node); usedTracks.add(i); return i; } }
+    tracks.push(addVideoTrack(M, seq.node)); occ.push([[a, b]]); adds.push([node]); cand.push(tracks.length - 1); usedTracks.add(tracks.length - 1); return tracks.length - 1;
+  };
+  const aTracks = seq.atracks.map(t => ({ t, items: M.items(t).map(n => M.info(n)) })), freeA = aTracks.filter(x => !x.items.length), sTrack = freeA[0] || null, sTrack2 = freeA[1] || null, addS = [], addS2 = [], sfxPlan = [];
+  if (!sTrack) log.push('비어 있는 오디오 트랙이 없어 효과음을 넣지 못했습니다. 빈 오디오 트랙을 하나 추가한 뒤 다시 만들어 주세요.');
+  const list = items.map(x => ({ ...x, t0: snap(toCut(x.t0)), t1: snap(toCut(x.t1)) })).filter(x => x.t1 - x.t0 >= fr * 5).sort((a, b) => a.t0 - b.t0);
+  for (let i = 0; i + 1 < list.length; i++) if (list[i].t1 > list[i + 1].t0) list[i].t1 = list[i + 1].t0;
+  const bump = opt.bump == null ? 10 : +opt.bump, bumped = new Set(); let n = 0, muted = 0;
+  for (const it of list) {
+    const d = cat.designs.find(x => x.name === it.design) || cat.designs[0]; if (it.t1 - it.t0 < fr * 5) continue;
+    const useTwo = d.two && (it.main2 || '').trim(); let folStart = null, baseTrack = -1;
+    d.clips.forEach((dc, k) => {
+      if (k > 0 && !useTwo) return;
+      const c = M.importClip(Tp, dc.clip.node), start = k === 0 ? it.t0 : snap(it.t0 + Math.min(dc.offset, (it.t1 - it.t0) / 3));
+      M.setTimes(c, start, it.t1, null); const ls = M.layersOf(c); if (k > 0) folStart = start;
+      if (useTwo && it.pos) { const key = k === 0 ? 'main' : 'main2', Lp = ls[dc.slots[key]], pp = Lp && M.params(Lp.comp)[2]; if (pp) M.setPos(pp, k === 0 ? it.pos.xb : it.pos.xf, null); }
+      for (const key in dc.slots) {
+        const L = ls[dc.slots[key]]; if (!L || !L.param) continue;
+        try {
+          const v = (it[key] || '').trim();
+          if (key === 'small') hideSmall(M, c, L.comp, !v);
+          if (v || key !== 'small') M.setText(L, v || ' ', { auto: true });
+        } catch (e) { log.push(`"${it.main}" 문구를 넣지 못했습니다: ${e.message}`); }
+      }
+      const ti = place(c, start, it.t1, k === 0 ? -1 : baseTrack); if (k === 0) baseTrack = ti;
+    });
+    if (sTrack && it.sfx !== false) {
+      const fo = d.two ? d.clips[1].offset : Infinity;
+      for (const s of d.sfx) { const late = s.offset >= fo - 0.1 * TICKS; if (late && !useTwo) continue; const st = late ? snap(folStart + (s.offset - fo)) : snap(it.t0 + s.offset); if (st < it.t1) sfxPlan.push({ s, st, en: st + (s.clip.end - s.clip.start) }); }
+    }
+    for (const c of an.captions) { const a = Math.max(c.start, it.t0), b = Math.min(c.end, it.t1); if (b - a >= (c.end - c.start) * 0.5) { muteClip(M, c.node); muted++; } }
+    // 효과자막이 떠 있는 컷은 영상을 조금 키운다
+    if (bump) for (const c of an.footage) { if (bumped.has(c.id)) continue; const a = Math.max(c.start, it.t0), b = Math.min(c.end, it.t1); if (b - a < (c.end - c.start) * 0.5) continue; const m = M.ensureMotion(c.node); if (m) { addToParam(m.scale, bump); bumped.add(c.id); } }
+    n++;
+  }
+  sfxPlan.sort((a, b) => a.st - b.st); let endA = 0, endB = 0, lastA = null;
+  for (const p of sfxPlan) {
+    const mk = () => { const a = M.importClip(Tp, p.s.clip.node); M.setTimes(a, p.st, p.en, p.s.clip.inPoint); return a; };
+    if (p.st >= endA) { lastA = { node: mk(), st: p.st }; addS.push(lastA.node); endA = p.en; }
+    else if (sTrack2 && p.st >= endB) { addS2.push(mk()); endB = p.en; }
+    else if (lastA && p.st - lastA.st >= fr * 2) { M.setTimes(lastA.node, lastA.st, p.st, null); lastA = { node: mk(), st: p.st }; addS.push(lastA.node); endA = p.en; }
+  }
+  adds.forEach((arr, i) => M.addToTrack(tracks[i], arr)); if (sTrack) M.addToTrack(sTrack.t, addS); if (sTrack2) M.addToTrack(sTrack2.t, addS2);
+  return { count: n, muted, sfx: addS.length + addS2.length, tracks: [...usedTracks].sort((a, b) => a - b).map(i => i + 1), bumped: bumped.size, log };
+}
+/* 숫자 파라미터(크기 등)에 값을 더한다. 키프레임이 있으면 모두에 더한다. */
+function addToParam(p, delta) {
+  if (!p) return; const sk = ch(p, 'StartKeyframe'); if (sk) { const a = sk.textContent.split(','); a[1] = fmtNum(parseFloat(a[1]) + delta); sk.textContent = a.join(','); }
+  const kf = ch(p, 'Keyframes'); if (kf) kf.textContent = kf.textContent.split(';').map(k => { if (!k) return k; const a = k.split(','); a[1] = fmtNum(parseFloat(a[1]) + delta); return a.join(','); }).join(';');
+}
+/* 첨자 줄을 안 쓸 때: 첨자 글자와 그 뒤의 박스(다음 글자 레이어 전까지의 묶음·도형)를 함께 끈다 */
+function hideSmall(P, ti, smallComp, off) {
+  setBypass(P, smallComp, off); const comps = P.comps(ti), i = comps.indexOf(smallComp); if (i < 0) return; const between = [];
+  for (let k = i + 1; k < comps.length; k++) { const mn = txt(ch(comps[k], 'MatchName')); if (mn === 'AE.ADBE Text') break; between.push([comps[k], mn]); }
+  const groups = between.filter(x => /SubGroup/i.test(x[1])), target = groups.length ? groups : between.filter(x => /Shape/i.test(x[1]));
+  for (const x of target) setBypass(P, x[0], off);
+}
+
+/* ================= 추출쇼츠: 본편의 구간을 통째로 가져와 세로 템플릿 안의 가로 시퀀스에 놓는다 ================= */
+function seqOfClip(P, ti) { const { clip } = P.clipEl(ti); if (!clip) return null; const src = P.deref(clip.getElementsByTagName('Source')[0]); if (!src || !/SequenceSource$/.test(src.tagName)) return null; return P.deref(src.getElementsByTagName('Sequence')[0]); }
+function removeFromTrack(P, track, node) {
+  const list = ch(track, 'ClipTrack', 'ClipItems', 'TrackItems'); if (!list) return; const id = node.getAttribute('ObjectID');
+  for (const e of chs(list, 'TrackItem')) if (e.getAttribute('ObjectRef') === id) list.removeChild(e);
+  chs(list, 'TrackItem').forEach((e, i) => e.setAttribute('Index', String(i)));
+}
+function clearTrack(track) { const list = ch(track, 'ClipTrack', 'ClipItems', 'TrackItems'); if (list) list.parentNode.removeChild(list); const tl = ch(track, 'ClipTrack', 'TransitionItems', 'TrackItems'); if (tl) tl.parentNode.removeChild(tl); }
+/* 추출쇼츠 템플릿: 세로 시퀀스(겉)와 그 안에 들어 있는 가로 시퀀스(본편을 넣는 곳)를 찾는다 */
+function analyzeExtractTpl(S) {
+  const seqs = S.seqs(); let found = null;
+  for (const outer of seqs.filter(s => s.h > s.w)) {
+    for (let ti = 0; ti < outer.vtracks.length && !found; ti++) for (const node of S.items(outer.vtracks[ti])) { const inner = seqOfClip(S, node); const info = inner && seqs.find(x => x.node === inner); if (info && info.w > info.h) { found = { outer, inner: info }; break; } }
+    if (found) break;
+  }
+  if (!found) throw new Error('세로 시퀀스 안에 본편을 넣는 가로 시퀀스가 들어 있는 템플릿을 찾지 못했습니다');
+  const { outer, inner } = found, texts = [];
+  outer.vtracks.forEach((t, ti) => { for (const node of S.items(t)) { const c = S.info(node); if (c.kind === 'text') texts.push(Object.assign(c, { track: ti })); } });
+  const lt = c => c.layers.map(L => oneLine(L.text)).filter(Boolean);
+  const title = texts.find(c => c.layers.length >= 2 && !lt(c).some(t => /guide|본편|확인해|궁금|넣어/i.test(t))) || null;
+  let innerEnd = 0, innerCount = 0; for (const t of inner.vtracks.concat(inner.atracks)) for (const node of S.items(t)) { innerEnd = Math.max(innerEnd, S.info(node).end); innerCount++; }
+  return { outer, inner, texts, title, titleTexts: title ? lt(title) : [], innerEnd, innerCount };
+}
+/* plan = [{t0,t1,main,sub}] (본편 틱). opt = { gapSec, clear, titleId } */
+function buildExtract(M, S, an, tp, plan, opt) {
+  opt = opt || {}; const log = [], inner = tp.inner, outer = tp.outer, fr = inner.frame, snap = t => Math.round(t / fr) * fr, gap = (opt.gapSec == null ? 8 : +opt.gapSec) * TICKS;
+  if (inner.w !== an.seq.w || inner.h !== an.seq.h) log.push(`본편(${an.seq.w}×${an.seq.h})과 템플릿의 본편 자리(${inner.w}×${inner.h}) 크기가 달라 화면이 어긋날 수 있습니다.`);
+  const clear = opt.clear !== false; if (clear) for (const t of inner.vtracks.concat(inner.atracks)) clearTrack(t);
+  let cur = clear ? 0 : snap(tp.innerEnd + gap); const segs = [];
+  for (const r of plan) { const a = Math.min(r.t0, r.t1), b = Math.max(r.t0, r.t1); if (b - a < fr * 10) continue; const d = snap(cur); segs.push({ a, b, d, len: snap(b - a), r }); cur = d + snap(b - a) + gap; }
+  if (!segs.length) throw new Error('구간이 비어 있습니다');
+  const total = segs[segs.length - 1].d + segs[segs.length - 1].len;
+  const hits = (c, g) => { const a = Math.max(c.start, g.a), b = Math.min(c.end, g.b); return b - a >= fr * 0.5 ? [a, b] : null; };
+  // 비디오: 본편에서 쓰인 트랙 순서를 그대로 지켜 아래부터 채운다 (모자라면 트랙을 만든다)
+  const mv = an.seq.vtracks.map(t => M.items(t).map(n => M.info(n))), usedV = []; mv.forEach((cl, i) => { if (cl.some(c => segs.some(g => hits(c, g)))) usedV.push(i); });
+  const vt = inner.vtracks.slice(); while (vt.length < usedV.length) vt.push(addVideoTrack(S, inner.node));
+  const vAdd = vt.map(() => []); let nV = 0, nA = 0;
+  usedV.forEach((mi, k) => { for (const c of mv[mi]) for (const g of segs) { const h = hits(c, g); if (!h) continue; const ds = snap(g.d + h[0] - g.a), de = snap(g.d + h[1] - g.a); if (de <= ds) continue; const n = S.importClip(M, c.node); S.setTimes(n, ds, de, Math.round(c.inPoint + (h[0] - c.start))); vAdd[k].push(n); nV++; } });
+  // 오디오: 템플릿의 오디오 트랙 수에 맞춰, 겹치지 않는 트랙에 놓는다
+  const ma = an.seq.atracks.map(t => M.items(t).map(n => M.info(n))), usedA = []; ma.forEach((cl, i) => { if (cl.some(c => segs.some(g => hits(c, g)))) usedA.push(i); });
+  const at = inner.atracks, aAdd = at.map(() => []), occ = at.map(t => clear ? [] : S.items(t).map(n => { const i = S.info(n); return [i.start, i.end]; })); let lost = 0;
+  usedA.forEach((mi, k) => { for (const c of ma[mi]) for (const g of segs) { const h = hits(c, g); if (!h) continue; const ds = snap(g.d + h[0] - g.a), de = snap(g.d + h[1] - g.a); if (de <= ds) continue;
+    const order = [Math.min(k, at.length - 1)].concat(at.map((_, i) => i)); let j = order.find(i => !occ[i].some(z => ds < z[1] && de > z[0])); if (j == null) { lost++; continue; }
+    const n = S.importClip(M, c.node); S.setTimes(n, ds, de, Math.round(c.inPoint + (h[0] - c.start))); aAdd[j].push(n); occ[j].push([ds, de]); nA++; } });
+  if (lost) log.push(`오디오 클립 ${lost}개는 놓을 트랙이 없어 빠졌습니다. 템플릿의 본편 시퀀스에 오디오 트랙을 더 만들어 두면 들어갑니다. (본편은 ${usedA.length}개 트랙을 쓰는데 템플릿에는 ${at.length}개가 있습니다)`);
+  vt.forEach((t, i) => S.addToTrack(t, vAdd[i])); at.forEach((t, i) => S.addToTrack(t, aAdd[i]));
+  // 겉(세로) 시퀀스: 처음부터 깔려 있는 클립들의 길이를 전체 길이에 맞추고, 제목은 구간마다 따로 만든다
+  const titleNode = opt.titleId ? S.byId.get(String(opt.titleId)) : tp.title && tp.title.node; let titleTrack = null;
+  for (const t of outer.vtracks.concat(outer.atracks)) for (const node of S.items(t)) {
+    if (node === titleNode) { titleTrack = t; continue; }
+    const i = S.info(node); if (i.start > fr * 2) continue;
+    S.setTimes(node, 0, total, null);
+    if (seqOfClip(S, node)) { const src = S.deref(S.clipEl(node).clip.getElementsByTagName('Source')[0]), od = src && ch(src, 'OriginalDuration'); if (od) od.textContent = String(total); }
+  }
+  if (titleNode && titleTrack) {
+    const made = [];
+    for (const g of segs) { const n = S.cloneClip(titleNode); S.setTimes(n, g.d, g.d + g.len, null); const ls = S.layersOf(n); try { if (ls[0] && (g.r.main || '').trim()) S.setText(ls[0], g.r.main.trim()); if (ls[1] && (g.r.sub || '').trim()) S.setText(ls[1], g.r.sub.trim()); } catch (e) { log.push('제목을 넣지 못했습니다: ' + e.message); } made.push(n); }
+    removeFromTrack(S, titleTrack, titleNode); S.addToTrack(titleTrack, made);
+  } else log.push('템플릿에서 제목 자막을 찾지 못해 제목은 바꾸지 않았습니다.');
+  return { segs: segs.map(g => ({ start: g.d, end: g.d + g.len })), total, video: nV, audio: nA, addedTracks: vt.length - inner.vtracks.length, log };
+}
+
+/* ================= 하이라이트: 본편의 짧은 조각들을 놓을 순서대로 이어 맨 앞에 두고, 본편 전체는 그만큼 뒤로 민다 ================= */
+function shiftTrack(P, track, d) {
+  for (const part of ['ClipItems', 'TransitionItems']) for (const e of chs(ch(track, 'ClipTrack', part, 'TrackItems'), 'TrackItem')) {
+    const n = P.deref(e), t = n && (ch(n, 'ClipTrackItem', 'TrackItem') || ch(n, 'TransitionTrackItem', 'TrackItem')), en = t && ch(t, 'End'); if (!en) continue;
+    let st = ch(t, 'Start'); if (!st) { st = P.doc.createElement('Start'); st.textContent = '0'; t.insertBefore(st, en); t.insertBefore(P.doc.createTextNode('\n\t\t\t\t'), en); }
+    st.textContent = String(+st.textContent + d); en.textContent = String(+en.textContent + d);
+  }
+}
+/* plan = [{t0,t1}] (본편 틱, 놓을 순서대로). opt = { gapSec, skipLongSec } */
+function buildHighlight(P, an, plan, opt) {
+  opt = opt || {}; const fr = an.seq.frame, snap = t => Math.round(t / fr) * fr, log = [], segs = []; let cur = 0;
+  for (const r of plan) { const a = Math.min(r.t0, r.t1), b = Math.max(r.t0, r.t1), len = snap(b - a); if (len < fr * 5) continue; segs.push({ a, b, d: cur, len }); cur += len; }
+  if (!segs.length) throw new Error('조각이 비어 있습니다');
+  const total = cur, shift = snap(total + (+opt.gapSec || 0) * TICKS), long = (+opt.skipLongSec || 0) * TICKS;
+  const tracks = an.seq.vtracks.map(t => ({ t, audio: false })).concat(an.seq.atracks.map(t => ({ t, audio: true }))); let nV = 0, nA = 0, skipped = 0;
+  const made = tracks.map(({ t, audio }) => {
+    const out = [];
+    for (const node of P.items(t)) {
+      const c = P.info(node); if (!segs.some(g => c.start < g.b && c.end > g.a)) continue;
+      if (audio && long && c.end - c.start >= long) { skipped++; continue; }
+      // 속도를 바꾼 클립(예: 102%)은 소스 시간이 타임라인 시간과 다르게 흐르므로, 그 클립 자신의 비율로 시작점을 옮긴다
+      const cl = P.clipEl(node).clip, outN = cl && cl.getElementsByTagName('OutPoint')[0]; let rate = outN && c.end > c.start ? (+outN.textContent - c.inPoint) / (c.end - c.start) : 1; if (!(rate > 0.05 && rate < 20)) rate = 1;
+      for (const g of segs) {
+        const a = Math.max(c.start, g.a), b = Math.min(c.end, g.b); if (b - a < fr * 0.5) continue;
+        const ds = snap(g.d + a - g.a), de = Math.min(snap(g.d + b - g.a), g.d + g.len); if (de <= ds) continue;
+        const n = P.cloneClip(node), i0 = Math.round(c.inPoint + (a - c.start) * rate); P.setTimes(n, ds, de, i0);
+        if (Math.abs(rate - 1) > 1e-6) { const o = P.clipEl(n).clip.getElementsByTagName('OutPoint')[0]; if (o) o.textContent = String(Math.round(i0 + (de - ds) * rate)); }
+        out.push(n); if (audio) nA++; else nV++;
+      }
+    }
+    return out;
+  });
+  tracks.forEach(({ t }) => shiftTrack(P, t, shift));
+  tracks.forEach(({ t }, i) => P.addToTrack(t, made[i]));
+  if (skipped) log.push(`1분이 넘는 긴 소리 클립 ${skipped}개(배경음악으로 보임)는 하이라이트에 넣지 않았습니다. 하이라이트용 음악은 따로 깔아 주세요.`);
+  return { segs: segs.map(g => ({ start: g.d, end: g.d + g.len })), total, shift, video: nV, audio: nA, log };
+}
+
+/* 템플릿의 소스(배경 그림 등)가 다른 컴퓨터 경로로 적혀 있는 경우: 찾아서, 템플릿 폴더 기준의 이 PC 경로로 바꿔 적는다 */
+const BSL = String.fromCharCode(92);
+function isWinPath(p) { p = String(p || ''); return p.length > 2 && ((p[1] === ':' && (p[2] === BSL || p[2] === '/')) || p.slice(0, 2) === BSL + BSL); }
+function foreignMedia(S) {
+  const out = [];
+  for (const m of chs(S.doc.documentElement, 'Media')) { const fp = txt(ch(m, 'FilePath')), rel = txt(ch(m, 'RelativePath')); if (!fp || isWinPath(fp) || !rel || rel[0] !== '.') continue; out.push({ node: m, rel, name: baseName(fp) }); }
+  return out;
+}
+function guessTplFolder(M, tplName) {
+  const cnt = new Map();
+  for (const m of chs(M.doc.documentElement, 'Media')) { const fp = txt(ch(m, 'FilePath')); if (!isWinPath(fp)) continue; const parts = fp.split('/').join(BSL).split(BSL), i = parts.lastIndexOf('source'); if (i < 2) continue; const root = parts.slice(0, i - 1).join(BSL); cnt.set(root, (cnt.get(root) || 0) + 1); }
+  let best = '', n = 0; for (const [k, v] of cnt) if (v > n) { best = k; n = v; }
+  return best ? best + BSL + String(tplName || '').replace(/[.]prproj$/i, '') : '';
+}
+function cleanFolder(folder) {
+  folder = String(folder || '').trim().split('"').join('').trim().split('/').join(BSL);
+  if (/[.]prproj$/i.test(folder)) folder = folder.split(BSL).slice(0, -1).join(BSL);
+  while (folder.endsWith(BSL)) folder = folder.slice(0, -1);
+  return folder;
+}
+function fixMediaPaths(S, folder) {
+  folder = cleanFolder(folder); if (!folder) return { count: 0, paths: [] };
+  const paths = [];
+  for (const f of foreignMedia(S)) {
+    const parts = folder.split(BSL);
+    for (const s of f.rel.normalize('NFC').split('/').join(BSL).split(BSL)) { if (!s || s === '.') continue; if (s === '..') parts.pop(); else parts.push(s); }
+    const p = parts.join(BSL); for (const tag of ['FilePath', 'ActualMediaFilePath']) for (const x of chs(f.node, tag)) x.textContent = p; paths.push(p);
+  }
+  return { count: paths.length, paths };
+}
+
+const Engine = { TICKS, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight };
+if (typeof window !== 'undefined') window.Engine = Engine;
+
+</script>
+<script>
+'use strict';
+const E = window.Engine, T = E.TICKS, $ = id => document.getElementById(id);
+const st = { mBytes: null, sBytes: null, M: null, S: null, an: null, sh: null, tr: null, cands: [], ask: null, save: null, pendingPrompt: null, pendingFor: null };
+const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const k in attrs || {}) { if (k === 'class') e.className = attrs[k]; else if (k === 'text') e.textContent = attrs[k]; else if (k.startsWith('on')) e[k] = attrs[k]; else e.setAttribute(k, attrs[k]); } for (const k of kids) if (k != null) e.append(k); return e; };
+const tc = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
+const show = (id, msg) => { const e = $(id); e.hidden = !msg; e.textContent = msg || ''; };
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+const clientKey = () => 'shorts-profile:' + (st.S ? st.S.name.replace(/\.prproj$/i, '').replace(/[\d_\-\s]+/g, ' ').trim().split(' ').slice(0, 2).join(' ') : '');
+
+/* ---------- Claude 연결 (있으면 쓰고, 없으면 복사·붙여넣기) ---------- */
+(async () => {
+  await 0; setupModes(); // 스크립트가 끝까지 읽힌 뒤에 방식 목록을 채운다
+  try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = (p, onText) => s.json(p, { modelTier: 'default', cache: false, onText }); st.save = await window.claude.use('downloads'); } } catch {}
+  setupModes();
+})();
+
+/* ---------- 1. 파일 ---------- */
+for (const k of ['M', 'S']) {
+  const d = $('drop' + k), f = $('file' + k);
+  d.onclick = () => f.click(); d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f.click(); } };
+  f.onchange = e => { const x = e.target.files[0]; e.target.value = ''; if (x) load(k, x); };
+  d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); const x = e.dataTransfer.files[0]; if (x) load(k, x); };
+}
+async function load(k, file) {
+  show('err1', ''); $('name' + k).textContent = file.name + ' 여는 중…';
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer()); const P = await E.Proj.fromBytes(bytes, file.name);
+    if (k === 'M') { st.M = P; st.mBytes = bytes; st.an = E.analyzeMid(P); st.tr = E.transcript(st.an); if (!st.an.captions.length) throw new Error('이 프로젝트에서 말자막을 찾지 못했습니다. 말자막이 들어간 완성본을 넣어 주세요.'); }
+    else { st.S = P; st.sBytes = bytes; st.sh = E.analyzeShorts(P); }
+    $('name' + k).textContent = file.name; $('drop' + k).classList.add('ok');
+  } catch (er) { $('name' + k).textContent = '다시 넣어 주세요'; $('drop' + k).classList.remove('ok'); if (k === 'M') st.M = null; else st.S = null; show('err1', er.message); }
+  st.cands = []; renderCands(); ready();
+}
+function ready() {
+  const ok = !!(st.M && st.S); for (const id of ['s2', 's3', 's4']) $(id).classList.toggle('off', !ok);
+  if (ok) renderSetup();
+}
+
+/* ---------- 2. 설정 ---------- */
+function renderSetup() {
+  const an = st.an, sh = st.sh, box = $('setup'); box.textContent = '';
+  const prof = store.get(clientKey()) || {}; st.prof = { camX: {}, factor: prof.factor || Math.round(sh.seq.h / an.seq.h * 101.25) / 100, tpl: {} };
+  const dur = an.seqEnd / T;
+  box.append(el('div', { class: 'kv' }, el('h3', { text: '미드폼' }), el('div', { text: an.seq.name }), el('div', { class: 'note', text: `${an.seq.w}×${an.seq.h} · ${tc(dur)} · 말자막 ${an.captions.length}개 · 효과자막 ${an.fx.length}개 · 삽입 이미지 ${an.inserts.length}개` })));
+  box.append(el('div', { class: 'kv' }, el('h3', { text: '쇼츠 디자인' }), el('div', { text: sh.seq.name }), el('div', { class: 'note', text: `${sh.seq.w}×${sh.seq.h} · 지금 끝 위치 ${tc(sh.end / T)} · 새 쇼츠는 그 뒤에 이어 붙습니다 · 이모지 ${sh.emojis.length}개` })));
+  // 견본
+  const tplBox = el('div', { class: 'kv' }, el('h3', { text: '쇼츠 자막 견본' }));
+  const opts = sh.texts.map(c => ({ id: c.id, label: `${tc(c.start / T)} · ${E.layerTexts(c).join(' / ').slice(0, 28)}` }));
+  for (const [key, name] of [['cap', '말자막'], ['emph', '강조 자막'], ['title', '제목']]) {
+    const sel = el('select', { id: 'tpl-' + key }); sel.append(el('option', { value: '', text: sh.T[key] ? '자동: ' + E.layerTexts(sh.T[key]).join(' / ').slice(0, 26) : '찾지 못함 — 직접 고르세요' }));
+    for (const o of opts) sel.append(el('option', { value: o.id, text: o.label }));
+    if (prof.tpl && prof.tpl[key] && opts.some(o => o.id === prof.tpl[key])) sel.value = prof.tpl[key];
+    sel.onchange = saveProf;
+    tplBox.append(el('div', { class: 'row' }, el('label', { for: 'tpl-' + key, text: name }), sh.T[key] ? el('span', { class: 'tag', text: '찾음' }) : el('span', { class: 'tag warn', text: '없음' })), sel);
+  }
+  box.append(tplBox);
+  // 카메라
+  const camBox = el('div', { class: 'kv' }, el('h3', { text: '인물 가운데 맞추기 (카메라별 좌우 위치)' }));
+  for (const cam of an.cams) {
+    const learned = sh.learned[cam], v = prof.camX && prof.camX[cam] != null ? prof.camX[cam] : learned ? Math.round(learned.x * 1000) / 1000 : 0.5;
+    const inp = el('input', { type: 'number', step: '0.01', min: '0', max: '1', value: v, id: 'cam-' + cam }); inp.onchange = saveProf;
+    camBox.append(el('div', { class: 'row' }, el('label', { for: 'cam-' + cam, text: cam }), learned ? el('span', { class: 'tag', text: '기존 쇼츠에서' }) : null, inp));
+  }
+  camBox.append(el('p', { class: 'note', text: '0.5가 한가운데입니다. 인물이 오른쪽에 치우쳐 있으면 값을 줄이고(예: 0.43), 왼쪽이면 늘리세요.' }));
+  const fac = el('input', { type: 'number', step: '0.01', min: '0.5', max: '4', value: st.prof.factor, id: 'factor' }); fac.onchange = saveProf;
+  camBox.append(el('div', { class: 'row' }, el('label', { for: 'factor', text: '영상 확대 배율 (미드폼 크기 × 이 값)' }), fac));
+  box.append(camBox);
+  $('setupNote').textContent = sh.emojis.length ? '' : '이모지: 쇼츠 디자인 프로젝트에 이름이 "이모지"인 폴더(빈)를 만들고 이미지를 넣어 두면 효과자막에 맞는 것을 골라 넣습니다. 지금은 폴더가 없어 견본 틀만 놓습니다.';
+  saveProf();
+}
+function saveProf() {
+  const p = { camX: {}, factor: parseFloat($('factor').value) || 1.8, tpl: {} };
+  for (const cam of st.an.cams) { const v = parseFloat($('cam-' + cam).value); if (!isNaN(v)) p.camX[cam] = v; }
+  for (const k of ['cap', 'emph', 'title']) { const v = $('tpl-' + k).value; if (v) p.tpl[k] = v; }
+  st.prof = p; store.set(clientKey(), p);
+}
+
+/* ---------- 3. 후보 구간 ---------- */
+function scriptText(t0, t1) {
+  const tr = st.tr, lines = [];
+  for (const c of tr.captions) if (c.t1 > t0 && c.t0 < t1) lines.push([c.t0, `${c.t0}-${c.t1} | ${c.text}`]);
+  for (const f of tr.fx) if (f.t1 > t0 && f.t0 < t1) lines.push([f.t0 + 0.001, `${f.t0}-${f.t1} | [효과자막 #${f.id}] ${f.texts.join(' / ')}`]);
+  for (const f of tr.inserts) if (f.t1 > t0 && f.t0 < t1) lines.push([f.t0 + 0.002, `${f.t0}-${f.t1} | [삽입 이미지 #${f.id}] ${f.name}`]);
+  return lines.sort((a, b) => a[0] - b[0]).map(x => x[1]).join('\n');
+}
+function promptCands() {
+  const n = Math.min(8, Math.max(2, +$('nCand').value || 5));
+  return `너는 유튜브 쇼츠 편집자다. 아래는 완성된 가로 영상(병원 원장 인터뷰/정보 영상)의 대본이다. 각 줄은 "시작초-끝초 | 내용"이고, [효과자막]은 화면에 뜨는 강조 문구, [삽입 이미지]는 화면에 들어가는 자료다. 효과자막만 있고 대사 줄이 없는 곳도 원장이 말을 하고 있는 구간이다.
+
+이 영상에서 쇼츠로 뽑을 구간 후보를 ${n}개 골라라.
+
+고르는 기준
+- 유형은 네 가지다: "궁금증"(답이 궁금해지는 질문·반전), "정보"(바로 써먹는 핵심 정보), "재미"(웃기거나 인간적인 순간, 솔직한 리액션), "자극"(통념을 깨거나 센 발언). 후보들이 한 유형에 몰리지 않게 가능한 한 네 유형을 고루 섞어라. "재미"와 "자극" 후보를 최소 하나씩 찾아보고, 정말 없을 때만 빼라.
+- 쇼츠 하나는 25~55초. 그 구간만 봐도 이야기가 완결돼야 하고, 문장 중간에서 자르지 마라.
+- 맨 앞 2~3초가 시청자를 붙잡아야 한다. 시작 방식(open)은 두 가지다.
+  · "질문": 질문 장면(질문 효과자막이나 진행자의 질문)으로 시작해 답으로 이어진다.
+  · "바로시작": 질문 없이, 구간에서 가장 재밌거나 센 문장을 맨 앞에 먼저 보여주고 그 뒤에 앞뒤 맥락을 붙인다. "재미"·"자극" 유형은 대개 이 방식이 맞다.
+  모든 후보를 "질문"으로 만들지 마라.
+- ranges는 재생 순서대로 1~3개 조각의 배열이다. 맨 앞에 보여줄 문장이 구간 중간이나 뒤에 있으면 그 부분을 첫 조각으로 떼어 앞에 놓고, 나머지를 뒤에 붙여라. 필요 없는 문장은 조각 사이에서 건너뛰어도 된다.
+- 조각의 시작과 끝은 반드시 대본 줄에 적힌 시작초/끝초 값을 그대로 써라.
+- 후보끼리 구간이 겹치지 않게 하라.
+
+아래 모양의 JSON만 답하라.
+{"candidates":[{"type":"자극","open":"바로시작","name":"후보를 한눈에 알 수 있는 짧은 이름","ranges":[[301.2,304.0],[287.3,322.1]],"hook":"맨 앞에 나오는 문장 그대로","reason":"왜 쇼츠감인지 한 문장"}]}
+
+대본 (전체 ${Math.round(st.an.seqEnd / T)}초)
+${scriptText(0, 1e9)}`;
+}
+function promptDetail(c) {
+  const sh = st.sh, a = Math.min(...c.tick.map(r => r[0])) / T, b = Math.max(...c.tick.map(r => r[1])) / T;
+  const lines = c.lines.map((l, i) => `L${i} | ${E.sec(l.t0)}-${E.sec(l.t1)} | ${l.src === 'asr' ? '(받아쓰기) ' : ''}${l.text}`).join('\n');
+  const fx = slotText(c);
+  return `너는 유튜브 쇼츠 편집자다. 병원 영상에서 아래 구간을 쇼츠로 만든다. 쇼츠용 문구를 써라.
+
+구간 유형: ${c.type} / 시작 방식: ${c.open} / 이름: ${c.name}
+
+[쇼츠에 나오는 대사 줄] 재생 순서대로다. 각 줄은 화면 아래 말자막으로 나간다. "(받아쓰기)" 줄은 음성 인식 결과라 틀린 글자가 있을 수 있다.
+${lines}
+
+[강조 자막을 넣을 자리] 원래 가로 영상에서 효과자막과 효과음이 나오던 시각이다. 번호 | 시작 | 원래 문구 | 그때 하는 말
+${fx}
+
+만들 것
+1) titles: 쇼츠 화면 상단에 계속 떠 있는 제목 후보 3개. 각도를 다르게: "궁금증"(답이 궁금해지게), "반박"(사람들이 알던 것과 반대라고 말하기), "자극"(센 표현으로 눈길 끌기). main은 큰 줄로 공백 포함 9자 이내, sub는 그 위 작은 줄로 14자 이내. 내용과 어긋나면 안 된다.
+2) hook: 맨 앞 조각 위에 띄울 문구. style은 "card"(검은 배경에 질문을 크게 — 시작 방식이 "질문"일 때), "over"(영상 위에 강조 문구만 얹기 — "바로시작"인데 한마디 얹으면 더 셀 때), "none"(아무것도 얹지 않고 말자막만 — 첫 문장 자체가 충분히 셀 때) 중 하나. big은 10자 이내, small은 16자 이내 보조 줄. none이면 둘 다 빈 문자열.
+3) emph: 강조 자막 목록. 아래 [강조 자막을 넣을 자리]의 모든 항목에 대해 하나씩 쓴다(빠뜨리면 효과음만 나고 화면이 빈다). 각 강조 자막은 그 효과자막이 원래 뜨던 시각에 효과음과 함께 뜬다.
+   · fx: 그 자리의 효과자막 번호.
+   · big: 핵심 문구. 공백 포함 9자를 절대 넘기지 마라(넘으면 화면 밖으로 나간다). 길어지면 앞부분을 small로 올려 두 줄로 만들어라.
+   · small: big 위에 얹는 보조 줄, 16자 이내. 원래 효과자막이 두 줄(보조 줄 + 핵심 줄)이었거나 문구가 길면 채우고, 짧은 한마디면 빈 문자열로 둬라. 한 줄짜리와 두 줄짜리가 섞이게 하라.
+   · big 안에서 가장 강조할 낱말과 나머지를 "|"로 한 번 나눠라. 앞부분이 강조 색, 뒷부분이 흰색으로 나온다. 띄어쓰기가 필요하면 "|" 뒤에 공백을 넣어라. 예: "치료를 하는| 개념", "사실|이고요". 전부 강조할 짧은 문구면 "|" 없이 써라.
+   · sec: 화면에 떠 있을 시간(초). 그 자리의 "그때 하는 말" 가운데 이 문구와 내용이 맞는 부분이 끝날 때까지로 잡되 1.5~4 사이로. 그 뒤의 말은 말자막으로 나간다.
+   · 원래 문구의 뜻을 유지하되 세로 화면에 맞게 줄여라.
+4) labels: 효과자막 중 강조 문구가 아니라 삽입 이미지에 붙은 이름표(제품명·기기명 등)인 것의 번호 배열. emph에는 넣지 마라.
+5) caps: "(받아쓰기)" 줄은 화면 아래 말자막으로 나간다. 말자막은 인물이 실제로 한 말과 거의 똑같아야 한다. 요약하거나 다른 표현으로 바꾸지 마라. {"줄번호":"바로잡은 자막"} 모양으로 받아쓰기 줄 번호를 하나도 빼지 말고 넣어라. 할 일은 하나뿐이다: 받아쓰기가 잘못 들은 낱말을 실제로 한 말로 되돌리는 것(예: "마시셔도"→"맞으셔도", "습관이"→"효과가", "만드셔야"→"맞으셔야"). 아래 참고 2(같은 촬영분의 다른 편집본 자막)가 가장 믿을 만한 근거이니, 해당하는 문장을 찾아 그 낱말과 어미를 그대로 따르라. 말투, 어미("~고요", "~하시면", "~봅니다"), 낱말 순서를 바꾸지 말고, 한 말을 빼거나 없는 말을 더하지 마라. 각 줄에는 그 줄의 시간에 실제로 들리는 부분만 담아라(문장이 여러 줄에 걸쳐 있으면 받아쓰기 줄이 나뉜 자리 그대로 나눈다). 마침표와 쉼표만 지워라. 확신이 없는 낱말은 받아쓰기 그대로 둬라.
+6) emoji: hook과 emph 각 항목에 어울리는 이모지를 아래 목록의 이름 그대로 하나 골라 넣어라. 어울리는 게 없거나 목록이 비었으면 빈 문자열.
+
+지킬 것: 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라. 자극은 말투와 궁금증으로만 올려라.
+
+이모지 목록: ${sh.emojis.length ? sh.emojis.map(e => e.name).join(', ') : '(없음)'}
+
+아래 모양의 JSON만 답하라.
+{"titles":[{"angle":"궁금증","main":"…","sub":"…"},{"angle":"반박","main":"…","sub":"…"},{"angle":"자극","main":"…","sub":"…"}],"hook":{"style":"card","big":"…","small":"…","emoji":""},"emph":[{"fx":"1701","big":"맞을 필요는| X","small":"처음부터 비싼 제품","sec":2.2,"emoji":""}],"labels":["1690"],"caps":{"3":"…"}}
+
+참고 1: 구간 앞뒤 대본(${Math.round(a)}~${Math.round(b)}초)
+${scriptText(a - 6, b + 6)}
+
+참고 2: 같은 촬영분의 다른 편집본 자막(시간은 다르지만 글자는 정확하다. 받아쓰기를 바로잡는 근거로 써라)
+${refFor(c) || '(없음)'}`;
+}
+/* 복사·붙여넣기 방식: 물어볼 것을 줄 세워 두고 하나씩 처리한다 */
+st.queue = [];
+function showQueue() {
+  const q = st.queue[0], box = $('manual'); box.hidden = !q; if (!q) return;
+  $('manualFor').textContent = typeof q.forWhat === 'string' ? 'AI에게 물어보기 — 후보 구간과 문구 한 번에' : `AI에게 물어보기 — "${q.forWhat.name}" 문구 쓰기`;
+  $('manualOut').value = q.prompt; $('manualIn').value = ''; $('copyState').textContent = `(${q.prompt.length.toLocaleString()}자)`;
+  $('queueState').textContent = st.queue.length > 1 ? `이 답을 적용하면 다음 요청문이 이어서 나옵니다 (남은 요청 ${st.queue.length - 1}개)` : '';
+  box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+/* ---------- AI 방식: Claude 자동 / GPT 연결(내 PC용 파일) / 복사·붙여넣기 ---------- */
+const IS_LOCAL = !(window.claude && window.claude.use);
+function mode() { const v = $('aiMode').value; if (v === 'claude' && !st.ask) return 'manual'; if (v === 'gpt' && !IS_LOCAL) return 'manual'; return v || 'manual'; }
+function setupModes() {
+  const sel = $('aiMode'), saved = store.get('shorts-ai') || {}, keep = sel.value || saved.mode; sel.textContent = '';
+  const add = (v, t, off) => { const o = el('option', { value: v, text: t }); if (off) o.disabled = true; sel.append(o); };
+  if (st.ask) add('claude', 'Claude 자동');
+  add('gpt', IS_LOCAL ? 'GPT 연결 (OpenAI API)' : 'GPT 연결 — 내 PC용 파일에서만 됩니다', !IS_LOCAL);
+  add('manual', '복사·붙여넣기 (ChatGPT 등)');
+  const ok = v => [...sel.options].some(o => o.value === v && !o.disabled);
+  sel.value = ok(keep) ? keep : st.ask ? 'claude' : IS_LOCAL ? 'gpt' : 'manual';
+  if (saved.key && !$('gptKey').value) { $('gptKey').value = saved.key; $('gptKeep').checked = true; }
+  if (saved.model && ![...$('gptModel').options].length) $('gptModel').append(el('option', { value: saved.model, text: saved.model }));
+  modeChanged();
+}
+function modeChanged() {
+  const m = mode(); $('gptBox').hidden = m !== 'gpt';
+  $('btnFind').textContent = m === 'manual' ? '요청문 만들기 (후보 + 문구 한 번에)' : '후보와 문구 한 번에 받기';
+  if (m !== 'manual') { st.queue = []; showQueue(); }
+  saveAi(); if (st.cands.length) renderCands();
+}
+function saveAi() { const o = { mode: $('aiMode').value, model: $('gptModel').value }; if ($('gptKeep').checked) o.key = $('gptKey').value.trim(); store.set('shorts-ai', o); }
+$('aiMode').onchange = modeChanged; $('gptKeep').onchange = saveAi; $('gptKey').onchange = saveAi; $('gptModel').onchange = saveAi;
+async function gptFetch(pathname, body) {
+  const key = $('gptKey').value.trim(); if (!key) throw new Error('OpenAI API 키를 먼저 넣어 주세요.');
+  let r; try { r = await fetch('https://api.openai.com/v1/' + pathname, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { throw new Error('OpenAI에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const m = (j.error && j.error.message) || ('오류 ' + r.status); throw new Error(r.status === 401 ? 'API 키가 맞지 않습니다. (' + m + ')' : r.status === 429 ? '사용 한도나 잔액 문제입니다. (' + m + ')' : m); }
+  return j;
+}
+$('btnModels').onclick = async () => {
+  $('gptNote').textContent = '모델 목록을 불러오는 중…';
+  try {
+    const j = await gptFetch('models'), cur = $('gptModel').value;
+    const list = (j.data || []).filter(m => /^(gpt|o[0-9]|chatgpt)/.test(m.id) && !/audio|realtime|image|tts|transcri|embed|search|moderation|instruct|codex/.test(m.id)).sort((a, b) => (b.created || 0) - (a.created || 0));
+    if (!list.length) throw new Error('이 키로 쓸 수 있는 대화 모델이 없습니다.');
+    $('gptModel').textContent = ''; for (const m of list) $('gptModel').append(el('option', { value: m.id, text: m.id }));
+    if (list.some(m => m.id === cur)) $('gptModel').value = cur; saveAi();
+    $('gptNote').textContent = `모델 ${list.length}개를 불러왔습니다. 위쪽이 최신입니다. 글을 잘 쓰는 큰 모델일수록 구간 선정과 문구가 좋아지고 요금도 올라갑니다.`;
+  } catch (e) { $('gptNote').textContent = e.message; }
+};
+async function askGpt(prompt) {
+  if (!$('gptKey').value.trim()) throw new Error('OpenAI API 키를 먼저 넣어 주세요.');
+  const model = $('gptModel').value; if (!model) throw new Error('"모델 불러오기"를 눌러 모델을 고른 뒤 다시 눌러 주세요.');
+  const msg = [{ role: 'user', content: prompt }]; let j;
+  try { j = await gptFetch('chat/completions', { model, messages: msg, response_format: { type: 'json_object' } }); }
+  catch (e) { if (!/response_format|json_object|not supported/i.test(e.message)) throw e; j = await gptFetch('chat/completions', { model, messages: msg }); }
+  const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '', a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new Error('GPT의 답을 읽지 못했습니다. 다시 눌러 보세요.');
+  if (j.usage) st.usage = (st.usage || 0) + (j.usage.total_tokens || 0);
+  return JSON.parse(text.slice(a, b + 1));
+}
+async function askClaude(prompt, stateId, forWhat) {
+  const md = mode();
+  if (md === 'claude') { $(stateId).textContent = 'Claude가 읽는 중…'; try { return await st.ask(prompt, t => { $(stateId).textContent = `Claude가 쓰는 중… ${t.text.length}자`; }); } finally { $(stateId).textContent = ''; } }
+  if (md === 'gpt') { $(stateId).textContent = 'GPT가 쓰는 중… 보통 30초~2분 걸립니다.'; try { return await askGpt(prompt); } finally { $(stateId).textContent = st.usage ? `이번에 연 뒤 쓴 토큰 약 ${st.usage.toLocaleString()}개` : ''; } }
+  st.queue = st.queue.filter(q => q.forWhat !== forWhat); st.queue.push({ prompt, forWhat }); showQueue();
+  return null;
+}
+$('btnCopy').onclick = async () => {
+  const q = st.queue[0]; if (!q) return;
+  try { await navigator.clipboard.writeText(q.prompt); $('copyState').textContent = '복사했습니다. ChatGPT에 붙여넣으세요.'; }
+  catch { const d = $('manualOut').closest('details'); d.open = true; $('manualOut').focus(); $('manualOut').select(); $('copyState').textContent = '자동 복사가 막혀 있습니다. 아래 칸이 전체 선택됐으니 Ctrl+C로 복사하세요.'; }
+};
+$('btnPaste').onclick = () => {
+  show('err3', ''); const q = st.queue[0]; if (!q) return;
+  try {
+    const raw = $('manualIn').value, a = raw.indexOf('{'), b = raw.lastIndexOf('}'); if (a < 0 || b <= a) throw new Error('{ } 로 된 답이 보이지 않습니다');
+    const body = raw.slice(a, b + 1); let j; try { j = JSON.parse(body); } catch (e1) { j = JSON.parse(body.replace(/[“”]/g, '"')); } // 문구 안의 둥근 따옴표를 깨뜨리지 않게, 그대로 먼저 읽는다
+    if (typeof q.forWhat === 'string') { if (!j.candidates) throw new Error('후보 구간에 대한 답이 아닙니다. 지금은 "후보와 문구 한 번에" 요청문의 답이 필요합니다'); applyCands(j); }
+    else { if (!j.titles && !j.emph) throw new Error(`문구에 대한 답이 아닙니다. 지금은 "${q.forWhat.name}" 문구 요청문의 답이 필요합니다`); applyDetail(q.forWhat, j); }
+    st.queue.shift(); showQueue();
+  } catch (er) { show('err3', '붙여넣은 답을 읽지 못했습니다. ' + er.message + '\nAI의 답 전체를 처음부터 끝까지 복사해 다시 붙여넣어 주세요.'); }
+};
+$('btnFind').onclick = async () => {
+  show('err3', ''); $('btnFind').disabled = true;
+  try { const j = await askClaude(promptAll(), 'findState', 'all'); if (j) applyCands(j); }
+  catch (er) { show('err3', '받지 못했습니다: ' + (er.message || er.code || er) + '\n다시 눌러 보세요. 계속 안 되면 후보 수를 줄여 보세요.'); }
+  $('btnFind').disabled = false;
+};
+/* 초 단위 구간을 가장 가까운 컷 경계에 붙인다 */
+function snapRanges(ranges) {
+  const an = st.an, cuts = new Set(); for (const c of an.footage.concat(an.captions)) { cuts.add(c.start); cuts.add(c.end); }
+  const arr = [...cuts].sort((a, b) => a - b), near = t => { let best = t, d = 0.6 * T; for (const x of arr) { const dd = Math.abs(x - t); if (dd < d) { d = dd; best = x; } } return best; };
+  return ranges.filter(r => Array.isArray(r) && r.length === 2 && r[1] > r[0]).map(r => [near(r[0] * T), near(r[1] * T)]).filter(r => r[1] > r[0]);
+}
+/* 다른 편집본 자막 중 이 구간과 낱말이 겹치는 줄 주변만 추린다 */
+function refFor(c) {
+  const ref = st.an.refLines || []; if (!ref.length) return '';
+  const words = new Set(); for (const l of c.lines) for (const w of l.text.split(/\s+/)) if (w.length >= 2) words.add(w);
+  for (const f of st.tr.fx) if (c.tick.some(r => f.t1 * T > r[0] && f.t0 * T < r[1])) for (const t of f.texts) for (const w of t.split(/\s+/)) if (w.length >= 2) words.add(w);
+  const hit = ref.map(t => t.split(/\s+/).filter(w => words.has(w)).length), keep = new Set();
+  hit.forEach((n, i) => { if (n >= 2) for (let k = i - 2; k <= i + 2; k++) if (k >= 0 && k < ref.length) keep.add(k); });
+  return [...keep].sort((x, y) => x - y).slice(0, 120).map(i => ref[i]).join('\n');
+}
+/* 한 번에 다 받기: 후보 구간 + 후보마다 제목·시작 문구·강조 자막 */
+function promptAll() {
+  const p = promptCands(), a = p.indexOf('아래 모양의 JSON만 답하라.'), b = p.indexOf('대본 (전체'), sh = st.sh;
+  const extra = `그리고 고른 후보마다 쇼츠에 들어갈 문구까지 함께 써라.
+- titles: 쇼츠 화면 상단에 계속 떠 있는 제목 후보 3개. 각도를 다르게: "궁금증"(답이 궁금해지게), "반박"(사람들이 알던 것과 반대라고 말하기), "자극"(센 표현으로 눈길 끌기). main은 큰 줄로 공백 포함 9자 이내, sub는 그 위 작은 줄로 14자 이내. 내용과 어긋나면 안 된다.
+- opening: 맨 앞 조각 위에 띄울 문구. style은 "card"(검은 배경에 질문을 크게 — open이 "질문"일 때), "over"(영상 위에 강조 문구만 얹기 — "바로시작"인데 한마디 얹으면 더 셀 때), "none"(아무것도 얹지 않고 말자막만 — 첫 문장 자체가 충분히 셀 때) 중 하나. big은 10자 이내, small은 16자 이내 보조 줄. none이면 둘 다 빈 문자열.
+- emph: 강조 자막 목록. 그 후보의 ranges 안에서 시작하는 [효과자막 #번호] 줄 하나하나에 대해 빠짐없이 하나씩 쓴다(빠뜨리면 효과음만 나고 화면이 빈다). 맨 앞 조각에서 opening이 대신하는 질문 효과자막과, labels에 넣은 것은 뺀다.
+   · fx: 그 효과자막 번호(# 뒤의 숫자).
+   · big: 핵심 문구. 공백 포함 9자를 절대 넘기지 마라(넘으면 화면 밖으로 나간다). 길어지면 앞부분을 small로 올려 두 줄로 만들어라.
+   · small: big 위에 얹는 보조 줄, 16자 이내. 원래 효과자막이 두 줄이었거나 문구가 길면 채우고, 짧은 한마디면 빈 문자열로 둬라. 한 줄짜리와 두 줄짜리가 섞이게 하라.
+   · big 안에서 가장 강조할 낱말과 나머지를 "|"로 한 번 나눠라. 앞부분이 강조 색, 뒷부분이 흰색으로 나온다. 띄어쓰기가 필요하면 "|" 뒤에 공백을 넣어라. 예: "치료를 하는| 개념", "사실|이고요". 전부 강조할 짧은 문구면 "|" 없이 써라.
+   · sec: 화면에 떠 있을 시간(초). 그 효과자막이 뜨는 동안 하는 말 가운데 이 문구와 내용이 맞는 부분이 끝날 때까지로, 1.5~4 사이.
+   · 원래 문구의 뜻을 유지하되 세로 화면에 맞게 줄여라.
+- labels: 효과자막 중 강조 문구가 아니라 삽입 이미지에 붙은 이름표(제품명·기기명 등)인 것의 번호 배열. emph에는 넣지 마라.
+- emoji: opening과 emph 각 항목에 어울리는 이모지를 아래 목록의 이름 그대로 하나 골라 넣어라. 어울리는 게 없거나 목록이 비었으면 빈 문자열.
+
+지킬 것: 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라. 자극은 말투와 궁금증으로만 올려라.
+
+이모지 목록: ${sh.emojis.length ? sh.emojis.map(e => e.name).join(', ') : '(없음)'}
+
+아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라.
+{"candidates":[{"type":"자극","open":"바로시작","name":"후보를 한눈에 알 수 있는 짧은 이름","ranges":[[301.2,304.0],[287.3,322.1]],"hook":"맨 앞에 나오는 문장 그대로","reason":"왜 쇼츠감인지 한 문장","titles":[{"angle":"궁금증","main":"…","sub":"…"},{"angle":"반박","main":"…","sub":"…"},{"angle":"자극","main":"…","sub":"…"}],"opening":{"style":"over","big":"…","small":"…","emoji":""},"emph":[{"fx":"1701","big":"맞을 필요는| X","small":"처음부터 비싼 제품","sec":2.2,"emoji":""}],"labels":["1690"]}]}
+
+`;
+  return p.slice(0, a) + extra + p.slice(b);
+}
+function ensureLines(c) { if (!c.lines) { const r = E.spokenLines(st.M, st.an, c.tick); c.lines = r.lines; c.noTranscript = r.noTranscript; tidyLines(c); } }
+function applyCands(j) {
+  const list = (j && j.candidates) || []; if (!list.length) throw new Error('후보가 비어 있습니다');
+  st.cands = list.map(c => ({ type: String(c.type || ''), open: /바로/.test(String(c.open || '')) ? '바로시작' : '질문', name: String(c.name || ''), hook: String(c.hook || ''), reason: String(c.reason || ''), tick: snapRanges(c.ranges || []), sel: false, detail: null, lines: null, pre: c.titles || c.emph || c.opening ? { titles: c.titles, hook: c.opening, emph: c.emph, labels: c.labels, caps: {} } : null })).filter(c => c.tick.length);
+  // 문구가 같이 온 후보는 바로 준비해 둔다 → 체크만 하면 만들 수 있다
+  for (const c of st.cands) if (c.pre) { try { ensureLines(c); applyDetail(c, c.pre); } catch (er) { c.err = String(er.message || er); } }
+  renderCands();
+}
+function defaultInserts(c) {
+  const an = st.an, out = [];
+  for (const x of an.inserts) if (c.tick.some(r => x.start < r[1] && x.end > r[0])) { const full = x.natW && x.natW * (x.motion ? x.motion.s : 100) / 100 >= an.seq.w * 0.9; out.push({ id: x.id, name: x.name, t0: x.start, mode: full ? 'fill' : 'keep' }); }
+  return out;
+}
+/* 구간 안에서 시작하는 효과자막 = 강조 자막을 넣을 자리 (효과음이 같이 깔려 있는 시각) */
+function fxSlots(c) {
+  const out = [];
+  c.tick.forEach((r, ri) => { for (const f of st.an.fx) if (f.start >= r[0] - 0.05 * T && f.start < r[1] - 0.3 * T) out.push({ f, r: ri, t0: Math.max(f.start, r[0]), end: Math.min(f.end, r[1]) }); });
+  return out.sort((a, b) => a.r - b.r || a.t0 - b.t0);
+}
+function slotText(c) {
+  return fxSlots(c).map(s => '#' + s.f.id + ' | ' + E.sec(s.t0) + '초부터 | 원래 문구: ' + E.layerTexts(s.f).join(' / ') + ' | 그때 하는 말: ' + (c.lines.filter(l => l.r === s.r && l.t1 > s.t0 && l.t0 < s.end).map(l => l.text).join(' ') || '(대사 없음)')).join(String.fromCharCode(10)) || '(없음)';
+}
+/* 큰 줄이 길면 앞부분을 작은 줄로 올린다 (화면 밖으로 나가지 않게) */
+function fitEmph(e) {
+  const plain = e.big.split('|').join('').trim(), len = t => [...t].length;
+  if (len(plain) > 10 && !e.small.trim()) { let cut = plain.lastIndexOf(' ', Math.ceil(plain.length / 2) + 1); if (cut <= 0) cut = plain.indexOf(' '); if (cut > 0) { e.small = plain.slice(0, cut).trim(); e.big = plain.slice(cut + 1).trim(); } }
+  e.long = len(e.big.split('|').join('')) > 10; return e;
+}
+function applyDetail(c, j) {
+  const L = c.lines, fixes = j.caps || j.fix || {};
+  for (const k in fixes) { const i = +k; if (L[i] && L[i].src === 'asr' && String(fixes[k]).trim()) { L[i].raw = L[i].raw || L[i].text; L[i].text = String(fixes[k]).trim(); } }
+  const h = j.hook || {}, style = ['card', 'over', 'none'].includes(h.style) ? h.style : c.open === '질문' ? 'card' : 'none';
+  const nD = Math.max(1, st.sh.designs.length), labels = new Set((j.labels || []).map(String)), byFx = new Map();
+  for (const e of j.emph || []) { const ids = e.fx != null ? [e.fx] : (e.from || []); for (const id of ids) if (!byFx.has(String(id))) byFx.set(String(id), e); }
+  const h0 = c.tick[0][0], h1 = h0 + E.hookLen(c.tick, {}), hookOn = style !== 'none' && (h.big || h.small);
+  // 맨 앞 문구가 대신하는 효과자막이 있으면, 첫 조각을 그 효과음이 시작하는 곳에서 시작시킨다
+  const lead = hookOn && fxSlots(c).find(s => s.r === 0 && !labels.has(s.f.id) && s.t0 < h1);
+  if (lead && lead.t0 > h0 && lead.t0 - h0 < 1.2 * T && c.tick[0][1] - lead.t0 > 1.2 * T) c.tick[0] = [lead.t0, c.tick[0][1]];
+  const slots = fxSlots(c).filter(s => !labels.has(s.f.id) && !(hookOn && s.r === 0 && s.t0 < h1)), emph = [];
+  slots.forEach((s, k) => {
+    const nx = slots[k + 1], limit = nx && nx.r === s.r ? Math.min(s.end, nx.t0) : s.end; if (limit - s.t0 < 0.6 * T) return;
+    const e = byFx.get(s.f.id), ts = E.layerTexts(s.f).filter(t => !/^(일반|상황|질문|Q)/.test(t));
+    const item = e ? { big: String(e.big || ''), small: String(e.small || ''), emoji: String(e.emoji || ''), sec: Math.min(4.5, Math.max(1.2, +e.sec || 3)) } : { big: (ts[ts.length - 1] || '').trim(), small: ts.length > 1 ? ts[0].trim() : '', emoji: '', sec: 3, auto: true };
+    if (!item.big.trim()) return;
+    emph.push(fitEmph({ ...item, fx: s.f.id, src: ts.join(' / '), r: s.r, t0: s.t0, limit, design: emph.length % nD }));
+  });
+  const d = { titles: (j.titles || []).slice(0, 3).map(t => ({ angle: String(t.angle || ''), main: String(t.main || ''), sub: String(t.sub || '') })), pick: 0, hook: { style, big: String(h.big || ''), small: String(h.small || ''), emoji: String(h.emoji || '') }, emph, inserts: defaultInserts(c) };
+  if (!d.titles.length) d.titles.push({ angle: '', main: c.name.slice(0, 9), sub: '' });
+  for (const id of labels) { const f = st.an.fx.find(x => x.id === id); if (f && c.tick.some(r => f.end > r[0] && f.start < r[1])) d.inserts.push({ id: f.id, name: '이름표: ' + E.layerTexts(f).join(' / '), t0: f.start, mode: 'keep' }); }
+  d.inserts.sort((a, b) => a.t0 - b.t0); c.detail = d; renderCands();
+}
+/* 한 구간의 문구를 받는다. 실패하면 그 카드에 이유와 다시 받기 버튼을 보여 준다. */
+async function askDetail(c) {
+  if (c.busy) return; c.busy = true; c.err = ''; renderCands();
+  try { await getDetail(c, 'buildState'); } catch (er) { c.err = String((er && (er.message || er.code)) || er); }
+  c.busy = false; renderCands();
+}
+async function getDetail(c, stateEl) {
+  ensureLines(c);
+  const j = await askClaude(promptDetail(c), stateEl, c); if (j) applyDetail(c, j);
+}
+function emphWindow(e) { return [e.t0, e.t1 || Math.min(e.limit, e.t0 + Math.max(0.8, +e.sec || 3) * T)]; }
+/* 가장 가까운 컷 경계(0.3초 안)에 붙인다. 컷은 말이 시작하고 끝나는 지점에 나 있다. */
+function snapCut(t) {
+  if (!st.cuts) { const s = new Set(); for (const c of st.an.footage) { s.add(c.start); s.add(c.end); } st.cuts = [...s].sort((a, b) => a - b); }
+  let best = t, d = 0.3 * T; for (const x of st.cuts) { const dd = Math.abs(x - t); if (dd < d) { d = dd; best = x; } else if (x > t + d) break; } return best;
+}
+/* 받아쓰기로 만든 줄의 시작·끝을 컷 경계에 붙이고, 줄 사이 짧은 틈을 메운다 */
+function tidyLines(c) {
+  const L = c.lines;
+  for (const l of L) if (l.src === 'asr') { const a = snapCut(l.t0), b = snapCut(l.t1); if (b - a > 0.3 * T) { l.t0 = Math.max(a, c.tick[l.r][0]); l.t1 = Math.min(b, c.tick[l.r][1]); } }
+  for (let i = 0; i + 1 < L.length; i++) { const a = L[i], b = L[i + 1]; if (a.r !== b.r) continue; if (a.t1 > b.t0 || (b.t0 - a.t1 > 0 && b.t0 - a.t1 < 0.4 * T)) a.t1 = b.t0; }
+  c.lines = L.filter(l => l.t1 - l.t0 > 0.2 * T);
+}
+/* 강조 자막과 말자막의 시간 배치.
+   강조 자막은 효과음 시각에 시작해, 그때 하는 말의 줄 단위로 끝난다(줄 중간에서 끊지 않는다).
+   강조 자막이 덮은 줄은 말자막에서 빠지고, 끝과 다음 자막 사이의 짧은 틈은 이어 붙인다. */
+function layoutEmph(c) {
+  const d = c.detail, L = c.lines, cov = new Set();
+  const hookOn = d.hook.style !== 'none' && (d.hook.big || d.hook.small), hw = hookOn ? [c.tick[0][0], c.tick[0][0] + E.hookLen(c.tick, d.hook)] : null;
+  d.emph.sort((a, b) => a.r - b.r || a.t0 - b.t0);
+  d.emph.forEach((e, k) => {
+    const nx = d.emph[k + 1], limit = Math.min(e.limit, nx && nx.r === e.r ? nx.t0 : Infinity), target = Math.min(limit, e.t0 + Math.max(0.8, +e.sec || 3) * T);
+    let end = 0;
+    L.forEach((l, i) => { if (l.r !== e.r) return; const mid = (l.t0 + l.t1) / 2; if (mid >= e.t0 - 0.1 * T && mid < target && l.t1 <= limit + 0.3 * T) { cov.add(i); end = Math.max(end, l.t1); } });
+    e.t1 = Math.min(limit, end || snapCut(target)); if (e.t1 - e.t0 < 0.8 * T) e.t1 = Math.min(limit, e.t0 + 1.2 * T);
+  });
+  if (hw) L.forEach((l, i) => { if (l.r === 0 && (l.t0 + l.t1) / 2 < hw[1]) cov.add(i); });
+  const caps = [];
+  L.forEach((l, i) => {
+    if (cov.has(i)) return; let t0 = l.t0, t1 = l.t1;
+    for (const e of d.emph) { if (e.r !== l.r || e.t0 >= t1 || e.t1 <= t0) continue; if (e.t0 > t0 + 0.3 * T) t1 = Math.min(t1, e.t0); else t0 = Math.max(t0, e.t1); }
+    if (hw && l.r === 0 && t0 < hw[1]) t0 = hw[1];
+    if (t1 - t0 >= 0.4 * T) caps.push({ l, i, t0, t1 });
+  });
+  for (const e of d.emph) {
+    const starts = caps.filter(x => x.l.r === e.r && x.t0 >= e.t1 - 1).map(x => x.t0).concat(d.emph.filter(x => x !== e && x.r === e.r && x.t0 >= e.t1 - 1).map(x => x.t0));
+    const nxt = Math.min(c.tick[e.r][1], ...starts); if (nxt > e.t1 && nxt - e.t1 < 0.8 * T) e.t1 = nxt;
+  }
+  c.caps = caps; return caps;
+}
+function captionLines(c) { return layoutEmph(c); }
+function renderCands() {
+  const box = $('cands'); box.textContent = ''; const total = st.an ? st.an.seqEnd : 1;
+  st.cands.forEach((c, i) => {
+    const dur = c.tick.reduce((a, r) => a + r[1] - r[0], 0) / T;
+    const cb = el('input', { type: 'checkbox', id: 'cand-' + i }); cb.checked = c.sel;
+    cb.onchange = () => { c.sel = cb.checked; renderCands(); if (c.sel && !c.detail) askDetail(c); };
+    const bar = el('div', { class: 'bar', title: '영상 전체에서 이 구간의 위치' }); c.tick.forEach((r, k) => { const s = el('i', { class: k === 0 && c.tick.length > 1 ? 'h' : '' }); s.style.left = (r[0] / total * 100) + '%'; s.style.width = ((r[1] - r[0]) / total * 100) + '%'; bar.append(s); });
+    const card = el('div', { class: 'cand' + (c.sel ? ' sel' : '') },
+      el('div', { class: 'top' }, el('label', { for: 'cand-' + i }, cb, el('div', {}, el('div', { class: 'ttl', text: c.name }), el('div', { class: 'meta', text: c.tick.map(r => tc(r[0] / T) + '–' + tc(r[1] / T)).join('  +  ') + '  ·  ' + dur.toFixed(1) + '초' }))), el('span', { class: 'tag', text: c.type + ' · ' + (c.open === '질문' ? '질문으로 시작' : '바로 시작') })),
+      bar, el('div', { class: 'hook', text: c.hook }), el('div', { class: 'note', text: c.reason }));
+    if (c.sel && c.detail) card.append(renderDetail(c, i));
+    else if (c.sel) {
+      const auto = mode() !== 'manual', again = el('button', { id: 'retry-' + i, text: c.err ? '문구 다시 받기' : auto ? '문구 받기' : '이 구간 요청문 보기' }); again.onclick = () => askDetail(c);
+      card.append(c.err ? el('div', { class: 'msg', text: '이 구간의 문구를 받지 못했습니다: ' + c.err + (auto ? '\n다시 받아도 안 되면 위쪽의 "다른 AI에 복사·붙여넣기로 쓰기"를 체크하고 다시 눌러 보세요.' : '') }) : el('div', { class: 'note', text: c.busy ? '문구를 쓰는 중입니다… 보통 20~60초 걸립니다.' : auto ? '아직 문구가 없습니다.' : '위쪽 "AI에게 물어보기" 상자에서 이 구간의 요청문을 복사해 답을 붙여넣어야 문구가 생깁니다.' }));
+      if (!c.busy) card.append(el('div', { class: 'actions' }, again));
+    }
+    box.append(card);
+  });
+  const chosen = st.cands.filter(c => c.sel), waiting = chosen.filter(c => !c.detail);
+  $('btnBuild').disabled = !chosen.some(c => c.detail);
+  $('buildWhy').textContent = !st.cands.length ? '' : !chosen.length ? '3단계에서 쇼츠로 만들 구간을 체크하세요.' : waiting.length ? `체크한 구간 ${chosen.length}개 중 ${waiting.length}개는 아직 문구(제목·강조 자막)가 없어서 만들 수 없습니다. 그 구간 카드에 적힌 안내대로 문구를 받으면 버튼이 켜집니다.` : '';
+}
+function renderDetail(c, i) {
+  layoutEmph(c);
+  const d = c.detail, L = c.lines, box = el('div', { class: 'detail' }), bind = (inp, obj, key) => { inp.value = obj[key]; inp.oninput = () => { obj[key] = inp.value; }; return inp; };
+  const emojiSel = (obj, id) => { const s = el('select', { id }); s.append(el('option', { value: '', text: st.sh.emojis.length ? '이모지 없음(견본 틀)' : '견본 틀' })); for (const e of st.sh.emojis) s.append(el('option', { value: e.name, text: e.name })); s.value = st.sh.emojis.some(e => e.name === obj.emoji) ? obj.emoji : ''; obj.emoji = s.value; s.onchange = () => { obj.emoji = s.value; }; return s; };
+  const tb = el('div', { class: 'titles' }, el('h4', { text: '제목 (하나를 고르고 고쳐 쓰세요 · 작은 줄 / 큰 줄)' }));
+  d.titles.forEach((t, k) => { const r = el('input', { type: 'radio', name: 'title-' + i, id: `title-${i}-${k}` }); r.checked = d.pick === k; r.onchange = () => { d.pick = k; }; tb.append(el('label', {}, r, el('span', { class: 'tag', text: t.angle || '직접' }), bind(el('input', { type: 'text', id: `tsub-${i}-${k}`, placeholder: '작은 줄' }), t, 'sub'), bind(el('input', { type: 'text', id: `tmain-${i}-${k}`, placeholder: '큰 줄' }), t, 'main'))); });
+  box.append(tb);
+  // 시작 방식
+  const hs = el('select', { id: `hstyle-${i}` }); for (const [v, n] of [['card', '질문 카드 (검은 배경에 크게)'], ['over', '영상 위에 강조 문구만'], ['none', '문구 없이 바로 시작']]) hs.append(el('option', { value: v, text: n })); hs.value = d.hook.style; hs.onchange = () => { d.hook.style = hs.value; renderCands(); };
+  const hk = el('div', { class: 'rows' }, el('h4', { text: '시작 2~3초 (작은 줄 / 큰 줄 / 이모지)' }), el('div', { class: 'r ins' }, el('span', { class: 't', text: '시작 방식' }), el('span', { class: 'nm', text: c.open === '질문' ? '질문으로 시작하는 구간' : '센 장면으로 바로 시작하는 구간' }), hs));
+  if (d.hook.style !== 'none') hk.append(el('div', { class: 'r' }, el('span', { class: 't', text: '맨 앞 문구' }), bind(el('input', { type: 'text', id: `hs-${i}` }), d.hook, 'small'), bind(el('input', { type: 'text', id: `hb-${i}` }), d.hook, 'big'), emojiSel(d.hook, `he-${i}`)));
+  box.append(hk);
+  // 강조 자막: 원래 효과자막(효과음)이 시작하는 시각에 뜬다
+  const dsel = (obj, id) => { const s = el('select', { id, title: '강조 자막 디자인' }); st.sh.designs.forEach((f, k) => s.append(el('option', { value: k, text: `디자인 ${k + 1} · ${f}` }))); s.value = String(obj.design || 0); s.onchange = () => { obj.design = +s.value; }; return s; };
+  const rows = el('div', { class: 'rows' }, el('h4', { text: '강조 자막 (효과음이 나는 시각에 뜹니다 · 작은 줄 / 큰 줄 / 이모지)' }), el('p', { class: 'note', text: '작은 줄을 비우면 한 줄짜리, 채우면 두 줄짜리 디자인이 쓰입니다. 큰 줄은 9자 안팎까지만 화면에 들어갑니다. 큰 줄에서 "|" 앞은 강조 색, 뒤는 흰색으로 나옵니다 (예: 치료를 하는| 개념).' }));
+  d.emph.forEach((e, k) => {
+    const sec = el('input', { type: 'number', id: `ex-${i}-${k}`, min: '0.8', max: '8', step: '0.1', title: '떠 있는 시간(초)' }); sec.value = Math.round(((emphWindow(e)[1] - e.t0) / T) * 10) / 10; sec.onchange = () => { e.sec = Math.max(0.8, parseFloat(sec.value) || 3); renderCands(); };
+    const bigIn = bind(el('input', { type: 'text', id: `eb-${i}-${k}` }), e, 'big'); bigIn.onchange = () => { fitEmph(e); renderCands(); };
+    const del = el('button', { id: `ed-${i}-${k}`, title: '이 강조 자막을 빼고 말자막으로 돌립니다', text: '빼기' }); del.onclick = () => { d.emph.splice(k, 1); renderCands(); };
+    rows.append(el('div', { class: 'r' }, el('span', { class: 't', text: tc(e.t0 / T) + ' 부터' }), bind(el('input', { type: 'text', id: `es-${i}-${k}` }), e, 'small'), bigIn, emojiSel(e, `ee-${i}-${k}`)),
+      el('div', { class: 'r ins said' }, el('span', { class: 'pair' }, sec, el('span', { class: 't', text: '초' })), el('span', { class: 'nm note', text: (e.long ? '⚠ 큰 줄이 길어 화면을 넘을 수 있습니다 · ' : '') + (e.auto ? '자동으로 채움 · ' : '') + '원래: ' + e.src }), el('span', { class: 'pair' }, dsel(e, `eg-${i}-${k}`), del)));
+  });
+  if (!d.emph.length) rows.append(el('p', { class: 'note', text: '이 구간에는 강조 자막을 넣을 자리가 없습니다.' }));
+  box.append(rows);
+  // 말자막
+  const caps = captionLines(c), asr = caps.filter(x => x.l.src === 'asr');
+  const cb = el('div', { class: 'rows' }, el('h4', { text: `말자막 ${caps.length}줄 · 미드폼에 말자막이 없던 곳은 프로젝트의 다른 시퀀스에 적힌 자막 글자를 가져왔습니다${asr.length ? ` · 거기에도 없던 ${asr.length}줄은 음성 받아쓰기로 채웠으니 틀린 글자를 고쳐 주세요` : ''}` }));
+  for (const x of caps) { if (x.l.src !== 'asr') continue; cb.append(el('div', { class: 'r ins' }, el('span', { class: 't', text: tc(x.l.t0 / T) + '–' + tc(x.l.t1 / T) }), bind(el('input', { type: 'text', id: `cl-${i}-${x.i}` }), x.l, 'text'), el('span', { class: 'tag warn', text: '받아쓰기' }))); }
+  if (c.noTranscript) cb.append(el('p', { class: 'msg', text: '이 프로젝트에는 프리미어 음성 받아쓰기가 없어, 말자막이 비어 있던 곳은 채우지 못했습니다. 프리미어에서 촬영 음성을 받아쓰기(텍스트 패널 → 받아쓰기)한 뒤 저장한 프로젝트를 넣으면 채워집니다.' }));
+  box.append(cb);
+  if (d.inserts.length) {
+    const ins = el('div', { class: 'rows' }, el('h4', { text: '삽입 이미지 (세로 화면에 넣는 방식)' }));
+    d.inserts.forEach((x, k) => { const s = el('select', { id: `im-${i}-${k}` }); for (const [v, n] of [['fill', '화면에 꽉 채우기'], ['board', '대판 깔고 그 위에'], ['keep', '위치·크기 그대로'], ['drop', '빼기']]) s.append(el('option', { value: v, text: n })); s.value = x.mode; s.onchange = () => { x.mode = s.value; }; ins.append(el('div', { class: 'r ins' }, el('span', { class: 't', text: tc(x.t0 / T) }), el('span', { class: 'nm', text: x.name }), s)); });
+    box.append(ins);
+  }
+  const redo = el('button', { id: 'redo-' + i, text: mode() === 'manual' ? '이 구간 문구만 다시 받기 (요청문 보기)' : '이 구간 문구만 다시 받기' }); redo.onclick = () => askDetail(c);
+  box.append(el('div', { class: 'actions' }, redo, el('span', { class: 'note', text: c.busy ? '다시 쓰는 중…' : c.err ? '다시 받지 못했습니다: ' + c.err : '' })));
+  return box;
+}
+
+/* ---------- 4. 만들기 ---------- */
+function zipStore(name, data) {
+  const crcT = zipStore.t || (zipStore.t = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })());
+  let crc = 0xffffffff; for (let i = 0; i < data.length; i++) crc = crcT[(crc ^ data[i]) & 0xff] ^ (crc >>> 8); crc = (crc ^ 0xffffffff) >>> 0;
+  const nm = new TextEncoder().encode(name), lh = new DataView(new ArrayBuffer(30)), cd = new DataView(new ArrayBuffer(46)), eo = new DataView(new ArrayBuffer(22));
+  lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, nm.length, true);
+  cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true); cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true); cd.setUint16(28, nm.length, true);
+  eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, 1, true); eo.setUint16(10, 1, true); eo.setUint32(12, 46 + nm.length, true); eo.setUint32(16, 30 + nm.length + data.length, true);
+  return new Blob([lh, nm, data, cd, nm, eo]);
+}
+async function saveOut(bytes, name) {
+  if (window.showSaveFilePicker) { try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere Pro 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(bytes); await w.close(); return name + ' 로 저장했습니다.'; } catch (e) { if (e && e.name === 'AbortError') return '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.'; } }
+  if (st.save) { const zn = name.replace(/\.prproj$/i, '') + '.zip'; await st.save.save({ filename: zn, data: zipStore(name, bytes) }); return zn + ' 로 받았습니다. 압축을 풀면 ' + name + ' 이 나옵니다.'; }
+  const a = el('a', { href: URL.createObjectURL(new Blob([bytes])), download: name }); document.body.append(a); a.click(); a.remove(); return name + ' 로 받았습니다.';
+}
+$('btnBuild').onclick = async () => {
+  show('err4', ''); $('log').textContent = ''; $('btnBuild').disabled = true; $('buildState').textContent = '만드는 중…';
+  await new Promise(r => setTimeout(r, 30));
+  try {
+    saveProf(); const S = await E.Proj.fromBytes(st.sBytes, st.S.name), sh = E.analyzeShorts(S), an = st.an, lines = [];
+    for (const k of ['cap', 'emph', 'title']) { const id = st.prof.tpl[k]; if (id) { const c = sh.texts.find(x => x.id === id); if (c) { sh.T[k] = c; if (k === 'emph') sh.emphForced = true; } } }
+    const has = (c, re) => c ? c.layers.findIndex(L => re.test(L.text || '')) : -1;
+    sh.roles.emphBig = sh.T.emph ? Math.max(0, has(sh.T.emph, /강조/)) : -1; sh.roles.emphSmall = sh.T.emph ? (has(sh.T.emph, /첨자/) >= 0 ? has(sh.T.emph, /첨자/) : sh.T.emph.layers.length > 1 ? 1 - sh.roles.emphBig : -1) : -1;
+    sh.roles.titleSub = sh.T.title ? (has(sh.T.title, /부제목/) >= 0 ? has(sh.T.title, /부제목/) : sh.T.title.layers.length > 1 ? 1 : -1) : -1; sh.roles.titleMain = sh.T.title ? sh.T.title.layers.findIndex((L, i) => i !== sh.roles.titleSub) : -1;
+    let n = 0;
+    for (const c of st.cands) {
+      if (!c.sel || !c.detail) continue; const d = c.detail, t = d.titles[d.pick] || d.titles[0];
+      const plan = { ranges: c.tick, title: { main: t.main, sub: t.sub }, hook: d.hook.style !== 'none' && (d.hook.big || d.hook.small) ? d.hook : null, emph: d.emph.map(e => ({ big: e.big, small: e.small, emoji: e.emoji, design: e.design, t0: e.t0, t1: emphWindow(e)[1], r: e.r })), captions: captionLines(c).map(x => ({ t0: x.t0, t1: x.t1, text: x.l.text, r: x.l.r })), inserts: d.inserts.filter(x => x.mode !== 'drop').map(x => ({ id: x.id, mode: x.mode })) };
+      const r = E.buildShort(st.M, S, an, sh, plan, { camX: st.prof.camX, factor: st.prof.factor }); n++;
+      lines.push(`쇼츠 ${n} "${t.main}" → ${sh.seq.name} 시퀀스 ${tc(r.start / T)} ~ ${tc(r.end / T)}`); for (const w of r.log) lines.push('   · ' + w);
+    }
+    if (!n) throw new Error('문구까지 준비된 구간이 없습니다.');
+    $('buildState').textContent = '파일로 묶는 중…'; await new Promise(r => setTimeout(r, 30));
+    const bytes = await S.encode(), d = new Date(), stamp = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    const msg = await saveOut(bytes, st.S.name.replace(/\.prproj$/i, '') + '_자동쇼츠_' + stamp + '.prproj');
+    lines.push('', msg, '프리미어에서 열어 위 위치로 가면 새 쇼츠가 있습니다.'); $('log').textContent = lines.join('\n'); $('buildState').textContent = `쇼츠 ${n}편을 만들었습니다.`;
+  } catch (er) { show('err4', '만들지 못했습니다: ' + (er.message || er.code || er)); $('buildState').textContent = ''; }
+  $('btnBuild').disabled = !st.cands.some(c => c.sel && c.detail);
+};
+</script>
+
+</body>
+</html>

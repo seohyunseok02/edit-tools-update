@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>썸네일 캡쳐</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 본편 넣기 → 템플릿 넣기 → 구간 고르기 → 만들기. 맨 위 안내 줄이 지금 할 일을 알려 준다. */
+:root{
+  --bg:#eef0f4;--panel:#fbfcfe;--ink:#171b24;--mute:#4f5868;--line:#d2d8e2;--accent:#1f5fbf;--accent-ink:#fff;--accent-soft:#dfe9fa;
+  --ok:#1f6b3b;--warn:#8a3a0a;--warn-soft:#fbe9d9;--seg:#1f5fbf;--track:#dfe4ec;
+  --font:"IBM Plex Sans KR","Malgun Gothic",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10131a;--panel:#181c26;--ink:#e6eaf2;--mute:#98a2b5;--line:#2b3140;--accent:#7fb0ff;--accent-ink:#0a1830;--accent-soft:#1b2a45;--ok:#6fcf93;--warn:#f0a36b;--warn-soft:#3a2415;--seg:#7fb0ff;--track:#242a38;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#10131a;--panel:#181c26;--ink:#e6eaf2;--mute:#98a2b5;--line:#2b3140;--accent:#7fb0ff;--accent-ink:#0a1830;--accent-soft:#1b2a45;--ok:#6fcf93;--warn:#f0a36b;--warn-soft:#3a2415;--seg:#7fb0ff;--track:#242a38;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--font);padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+header p{margin:4px 0 0;color:var(--mute)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+section.off{opacity:.5;pointer-events:none}
+h2{font-size:16px;margin:0;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+h2 .n{font:500 12px var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 6px}
+h2 small{font-weight:400;color:var(--mute);font-size:13px}
+h3{margin:0;font-size:14px}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:7px 14px}
+button.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=text],input[type=number],input[type=password],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;min-width:0}
+textarea{width:100%;min-height:110px;font:12px/1.5 var(--mono)}
+::placeholder{color:var(--mute);opacity:1}
+.drops{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.drops{grid-template-columns:1fr}}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:20px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0}
+.drop b{font-size:15px}.drop span{color:var(--mute);font-size:13px;word-break:break-all}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop.ok{border-style:solid;border-color:var(--accent)}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.note{color:var(--mute);font-size:13px;margin:0}
+.msg{border-radius:7px;padding:8px 12px;background:var(--warn-soft);color:var(--warn);font-size:13px;white-space:pre-wrap}
+.kv{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.kv .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kv .row label{flex:1;min-width:0;font-size:13px}
+.guide{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.gsteps{display:flex;flex-wrap:wrap;gap:6px}
+.gs{font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--mute)}
+.gs.done{color:var(--ok);border-color:var(--ok)}
+.gs.now{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.clip{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;grid-template-columns:24px 1fr;gap:6px 10px}
+.clip.sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.clip.offx{opacity:.55}
+.clip input[type=checkbox]{margin-top:4px;width:17px;height:17px;accent-color:var(--accent)}
+.clip .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.clip .row input[type=text]{flex:1;min-width:110px}
+.clip .time input{width:86px;flex:none;font-family:var(--mono);font-size:13px}
+.clip .t{font:12px var(--mono);color:var(--mute)}
+.clip .said{font-size:13px;color:var(--mute)}
+.bar{position:relative;height:10px;border-radius:5px;background:var(--track);overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;background:var(--seg);min-width:3px}
+.manual{border:2px solid var(--accent);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--accent-soft)}
+.manual .note{color:var(--ink)}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.steps a{color:var(--accent);font-weight:600}
+#manualOut{min-height:160px;margin-top:8px}
+#log{font:12px/1.6 var(--mono);color:var(--mute);white-space:pre-wrap;margin:0}
+details summary{cursor:pointer;color:var(--mute);font-size:13px}
+</style>
+<style>
+body{margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.shot{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}
+.shot img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--track)}
+.shot span{padding:6px 10px;font:12px var(--mono);color:var(--mute);word-break:break-all}
+.path{font:13px var(--mono);word-break:break-all}
+.busy{display:flex;gap:10px;align-items:center}
+.spin{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>썸네일 캡쳐</h1>
+    <p>프로젝트를 고르면 프리미어를 켜서 자막·효과자막·인서트를 모두 숨기고, 정면 카메라 화면만 프리미어의 내보내기로 여러 장 뽑습니다. 프로젝트는 저장하지 않으므로 원본은 바뀌지 않습니다.</p>
+  </header>
+
+  <div class="guide"><div id="guideNext"></div></div>
+
+  <section id="s1">
+    <h2><span class="n">1</span>프로젝트 고르기</h2>
+    <div class="actions"><button class="pri" id="btnPick">프로젝트 파일 고르기</button><span class="path" id="projPath">아직 고르지 않았습니다</span></div>
+  </section>
+
+  <section id="s2">
+    <h2><span class="n">2</span>설정 <small>한 번 정하면 다음에도 기억합니다.</small></h2>
+    <div class="actions">
+      <label>형식 <select id="format">
+        <option value="png16">PNG 16bit</option>
+        <option value="png8">PNG 8bit</option>
+        <option value="tiff16">TIFF 16bit</option>
+        <option value="tiff8">TIFF 8bit</option>
+        <option value="jpg">JPEG (최고 화질)</option>
+        <option value="custom">직접 만든 사전 설정(.epr)</option>
+      </select></label>
+      <label>장수 <input type="number" id="count" value="7" min="1" max="60" style="width:64px"> 장</label>
+      <label>정면 카메라 트랙 <select id="track"><option value="0">자동 (A캠 찾기)</option><option value="1">V1</option><option value="2">V2</option><option value="3">V3</option><option value="4">V4</option><option value="5">V5</option><option value="6">V6</option></select></label>
+    </div>
+    <div class="actions" id="customRow" hidden>
+      <button id="btnPreset">사전 설정 파일 고르기</button><span class="path" id="presetPath">아직 고르지 않았습니다</span>
+      <label>확장자 <input type="text" id="ext" placeholder="png, tif, dpx, exr …" style="width:150px"></label>
+    </div>
+    <p class="note" id="customNote" hidden>프리미어 내보내기 창에서 원하는 형식·비트 수로 맞춘 뒤 "사전 설정 저장"으로 만든 .epr 파일을 고르면 그 설정 그대로 뽑습니다. 확장자에는 그 형식의 파일 확장자를 적어 주세요.</p>
+    <div class="actions">
+      <span>저장 위치</span><button id="btnOut">폴더 고르기</button><button id="btnOutReset" hidden>프로젝트 옆으로 되돌리기</button><span class="path" id="outPath"></span>
+    </div>
+    <p class="note">고른 폴더 안에 "썸네일_프로젝트이름" 폴더가 만들어지고 그 안에 저장됩니다. 여러 프로젝트를 같은 곳에 모아도 섞이지 않습니다.</p>
+    <p class="note">표정을 보고 고르지는 못합니다. 영상 전체에서 고르게 나눈 컷의 가운데 장면을 뽑으니, 마음에 드는 장면을 고르려면 장수를 20~30으로 늘려 뽑으세요.</p>
+  </section>
+
+  <section id="s3">
+    <h2><span class="n">3</span>캡쳐</h2>
+    <div class="actions"><button class="pri" id="btnRun" disabled>썸네일 캡쳐 시작</button><button id="btnFolder" hidden>저장 폴더 열기</button></div>
+    <div class="busy" id="busy" hidden><span class="spin" aria-hidden="true"></span><span id="busyText" role="status"></span></div>
+    <div class="msg" id="err" hidden></div>
+    <pre id="log"></pre>
+    <div class="grid" id="grid"></div>
+  </section>
+</div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id), api = window.parent && window.parent.thumbApi;
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+const st = Object.assign({ project: '', preset: '', format: 'png16', count: 7, track: 0, ext: '', outDir: '' }, store.get('thumb-cfg') || {}, { project: '', folder: '', running: false });
+const show = (id, msg) => { const e = $(id); e.hidden = !msg; e.textContent = msg || ''; };
+function render() {
+  $('format').value = st.format; $('count').value = st.count; $('track').value = String(st.track); $('ext').value = st.ext;
+  const custom = st.format === 'custom'; $('customRow').hidden = $('customNote').hidden = !custom;
+  $('projPath').textContent = st.project || '아직 고르지 않았습니다'; $('presetPath').textContent = st.preset || '아직 고르지 않았습니다';
+  const need = !api ? '이 화면은 "편집 도구 모음" 프로그램 안에서만 동작합니다.' : !st.project ? '1번에서 썸네일을 뽑을 프로젝트 파일을 고르세요.' : custom && !st.preset ? '2번에서 사전 설정 파일을 고르세요.' : custom && !st.ext.trim() ? '2번에서 확장자를 적어 주세요.' : '';
+  $('btnRun').disabled = !!need || st.running; $('btnFolder').hidden = !st.folder;
+  $('guideNext').textContent = '지금 할 일: ' + (st.running ? '프리미어가 캡쳐하는 중입니다. 끝날 때까지 프리미어를 건드리지 말고 기다려 주세요.' : need || (st.folder ? '다 됐습니다. 아래에서 결과를 확인하세요. 프리미어는 "저장 안 함"으로 닫으면 됩니다.' : '프리미어를 끈 상태에서 3번의 "썸네일 캡쳐 시작"을 누르세요.'));
+  $('outPath').textContent = st.outDir || '프로젝트 파일이 있는 폴더 (기본)'; $('btnOutReset').hidden = !st.outDir;
+  store.set('thumb-cfg', { preset: st.preset, format: st.format, count: st.count, track: st.track, ext: st.ext, outDir: st.outDir });
+}
+$('format').onchange = () => { st.format = $('format').value; render(); };
+$('count').onchange = () => { st.count = Math.max(1, Math.min(60, parseInt($('count').value, 10) || 7)); render(); };
+$('track').onchange = () => { st.track = +$('track').value; render(); };
+$('ext').oninput = () => { st.ext = $('ext').value; const need = st.format === 'custom' && !st.ext.trim(); $('btnRun').disabled = need || !st.project || st.running; };
+$('ext').onchange = render;
+$('btnPick').onclick = async () => { const p = await api.pick('project'); if (p) { st.project = p; st.folder = ''; $('grid').textContent = ''; $('log').textContent = ''; show('err', ''); render(); } };
+$('btnPreset').onclick = async () => { const p = await api.pick('preset'); if (p) { st.preset = p; render(); } };
+$('btnOut').onclick = async () => { const p = await api.pick('folder'); if (p) { st.outDir = p; render(); } };
+$('btnOutReset').onclick = () => { st.outDir = ''; render(); };
+$('btnFolder').onclick = () => api.open(st.folder);
+$('btnRun').onclick = async () => {
+  show('err', ''); $('log').textContent = ''; $('grid').textContent = ''; st.running = true; st.folder = ''; render();
+  $('busy').hidden = false; const t0 = Date.now(), tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); $('busyText').textContent = `프리미어를 켜서 캡쳐하는 중… ${Math.floor(s / 60)}분 ${s % 60}초 (프로젝트가 크면 여는 데 몇 분 걸립니다)`; }, 1000);
+  let r; try { r = await api.run({ project: st.project, format: st.format === 'custom' ? st.preset : st.format, ext: st.format === 'custom' ? st.ext.trim() : '', count: st.count, track: st.track, outDir: st.outDir }); } catch (e) { r = { error: String(e && e.message || e) }; }
+  clearInterval(tick); $('busy').hidden = true; st.running = false;
+  if (r.error) show('err', r.error);
+  else {
+    st.folder = r.folder || ''; $('log').textContent = r.log || '';
+    for (const f of r.files || []) { const name = f.split('\\').pop(), box = document.createElement('div'); box.className = 'shot';
+      if (/\.(png|jpe?g)$/i.test(name)) { const im = document.createElement('img'); im.alt = name; im.loading = 'lazy'; im.src = 'file:///' + f.split('\\').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:'); box.append(im); }
+      const cap = document.createElement('span'); cap.textContent = name; box.append(cap); $('grid').append(box); }
+    if (!(r.files || []).length) show('err', '저장된 그림이 없습니다. 위 기록을 확인해 주세요.');
+  }
+  render();
+};
+render();
+</script>
+</body>
+</html>

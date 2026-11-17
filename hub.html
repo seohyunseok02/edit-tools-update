@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>편집 도구 모음</title>
+<style>
+/* 위쪽 탭 줄에서 편집기를 고르면 아래에 그 편집기가 열린다. 한 번 연 편집기는 탭을 옮겨도 작업 내용이 그대로 남는다. */
+:root{--bg:#eef0f4;--panel:#fbfcfe;--ink:#171b24;--mute:#4f5868;--line:#d2d8e2;--accent:#1f5fbf;--accent-ink:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--panel:#181c26;--ink:#e6eaf2;--mute:#98a2b5;--line:#2b3140;--accent:#7fb0ff;--accent-ink:#0a1830;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font:15px/1.4 "Malgun Gothic",system-ui,sans-serif}
+nav{display:flex;gap:4px;align-items:center;padding:8px 12px 0;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+nav b{margin-right:12px;font-size:15px}
+nav button{font:inherit;color:var(--mute);background:none;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;cursor:pointer}
+nav button:hover{color:var(--ink)}
+nav button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+nav button[aria-selected=true]{color:var(--ink);font-weight:700;background:var(--bg);border-color:var(--line);box-shadow:inset 0 3px 0 var(--accent)}
+#ver{margin-left:auto;color:var(--mute);font-size:12px;padding:0 4px}
+#upd{font:inherit;font-weight:700;color:var(--accent-ink);background:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:6px 14px;margin-bottom:6px;cursor:pointer}
+main{flex:1;min-height:0;position:relative}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
+iframe[hidden]{display:none}
+</style>
+</head>
+<body>
+<nav role="tablist" aria-label="편집기"><b>편집 도구 모음</b></nav>
+<main id="main"></main>
+<script>
+'use strict';
+const TOOLS = [['fx', '효과자막'], ['spell', '맞춤법 검사'], ['highlight', '하이라이트'], ['shorts', '쇼츠'], ['extract', '추출쇼츠'], ['thumb', '썸네일 캡쳐']];
+const nav = document.querySelector('nav'), main = document.getElementById('main'), frames = {};
+function open(id) {
+  for (const [k] of TOOLS) { document.getElementById('tab-' + k).setAttribute('aria-selected', String(k === id)); if (frames[k]) frames[k].hidden = k !== id; }
+  if (!frames[id]) { const f = document.createElement('iframe'); f.src = 'pages/' + id + '.html'; f.title = TOOLS.find(t => t[0] === id)[1]; main.append(f); frames[id] = f; }
+  try { localStorage.setItem('hub-tab', id); } catch {}
+}
+for (const [id, name] of TOOLS) { const b = document.createElement('button'); b.id = 'tab-' + id; b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = name; b.onclick = () => open(id); nav.append(b); }
+// 버전 표시와 새 버전 알림 (프로그램 안에서만; 예전 프로그램 틀에는 이 기능이 없을 수 있다)
+const ver = document.createElement('span'); ver.id = 'ver'; nav.append(ver);
+if (window.appUpdate) {
+  appUpdate.info().then(i => { ver.textContent = '버전 ' + i.n; }).catch(() => {});
+  appUpdate.onReady(r => {
+    if (document.getElementById('upd')) return; const b = document.createElement('button'); b.id = 'upd'; b.type = 'button';
+    if (r.needInstall) { b.textContent = '새 설치 파일이 필요한 업데이트가 있습니다'; b.disabled = true; }
+    else { b.textContent = '새 버전 ' + r.n + ' 받음 · 눌러서 적용'; b.title = '지금 작업 중인 내용은 사라집니다. 저장한 뒤 누르세요. 누르지 않아도 다음에 켤 때 적용됩니다.'; b.onclick = () => appUpdate.apply(); }
+    nav.insertBefore(b, ver); ver.style.marginLeft = '8px'; b.style.marginLeft = 'auto';
+  });
+}
+let last = null; try { last = localStorage.getItem('hub-tab'); } catch {}
+open(TOOLS.some(t => t[0] === last) ? last : 'fx');
+</script>
+</body>
+</html>
