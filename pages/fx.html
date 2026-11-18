@@ -1592,6 +1592,8 @@ $('btnBuild').onclick = async () => {
    이 편집기로 만든 프로젝트를 사람이 프리미어에서 고쳐 저장하면, 만든 것과 고친 것을 비교해 지운 것·추가한 것·문구·디자인 바꾼 것을 팀 공유 기록에 쌓고,
    다음 요청문에 넣는다. 기록은 업체별이다. */
 st.learned = [];
+// 팀원마다 업체 이름을 조금씩 다르게 적어도(띄어쓰기·기호·대소문자·끝의 의원/병원/클리닉) 같은 업체 기록으로 모은다
+const clientKey = n => { let k = String(n || '').normalize('NFC').toLowerCase().replace(/[\s\-_.·,()\[\]{}'"]/g, ''); const t = k.replace(/(의원|병원|클리닉|clinic)$/, ''); if (t.length >= 2) k = t; return k || String(n || ''); };
 const fxText = e => [e.small, e.main, e.main2].filter(Boolean).join(' / ');
 function fxDiff(a, b) {
   const used = new Set(), out = [];
@@ -1614,7 +1616,7 @@ async function learnFromEdits() {
       const cat = E.analyzeTemplate(await E.Proj.fromBytes(c.tplBytes, c.tplName));
       const a = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), cat).examples, b = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), cat).examples;
       const items = fxDiff(a, b); if (!items) continue;
-      await LA.put({ tool: 'fx', client: p.client, rec: p.id, mtime: p.mtime, items }); n += items.length;
+      await LA.put({ tool: 'fx', client: clientKey(p.client), rec: p.id, mtime: p.mtime, items }); n += items.length;
     } catch (e) {}
   }
   return n;
@@ -1622,7 +1624,7 @@ async function learnFromEdits() {
 async function loadLearned(fresh) {
   const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA || !st.cur) { box.hidden = true; return; }
   try {
-    const r = await LA.load({ tool: 'fx', client: st.cur }); st.learned = r.items || [];
+    const r = await LA.load({ tool: 'fx', client: clientKey(st.cur) }); st.learned = r.items || [];
     box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (st.learned.length ? `편집자들이 이 업체 영상에서 고친 기록 ${st.learned.length}건(${r.people}명)을 요청문에 넣습니다.` : '아직 이 업체에서 고친 기록이 없습니다. 만든 프로젝트를 프리미어에서 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
   } catch (e) { box.hidden = true; }
 }

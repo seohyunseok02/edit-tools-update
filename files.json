@@ -11,8 +11,8 @@
  },
  {
   "path": "pages/fx.html",
-  "size": 156488,
-  "sha256": "cc9498d1dfe37072997d555d89836263e5c946576cfc2775533112bd7bc9d222"
+  "size": 156917,
+  "sha256": "62b340ff90de88d08ae948c0a386d4078c202b2ba12e741a8a3ec7c5825ad806"
  },
  {
   "path": "pages/highlight.html",
@@ -66,7 +66,7 @@
  },
  {
   "path": "version.json",
-  "size": 160,
-  "sha256": "d8d8832dbeeec70b022e4cf1428472030a8e48fc06a362a4f0ccb924f9b23691"
+  "size": 161,
+  "sha256": "dc35624a05208f0d01a1c33f1932e86349a1090edad1037e28f405146b50e99d"
  }
 ]
