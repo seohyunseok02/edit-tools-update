@@ -16,13 +16,13 @@
  },
  {
   "path": "pages/highlight.html",
-  "size": 123064,
-  "sha256": "ee6fecd5359377a382cbff0ce6823ea6e4df515cb5b6c0d10cc91604c90afb06"
+  "size": 127413,
+  "sha256": "7a8eeee5ccf33e65eb114c8fe1ff8234d8096f64c1f2628f20678a57cca912cb"
  },
  {
   "path": "pages/shorts.html",
-  "size": 150857,
-  "sha256": "5821ffeab71364cba5832bc015e3276e81815caba11a32b8b7e7501ab7e90266"
+  "size": 157499,
+  "sha256": "88324e5a033dff123eb6c913cf853bc459f82142a85d1926706677e332dbecc4"
  },
  {
   "path": "pages/spell.html",
@@ -66,7 +66,7 @@
  },
  {
   "path": "version.json",
-  "size": 161,
-  "sha256": "dc35624a05208f0d01a1c33f1932e86349a1090edad1037e28f405146b50e99d"
+  "size": 145,
+  "sha256": "4178d6c5ac6c97bd7fbdaf4e9d7d9d72c8949e4e0bbef79cd7e8f5b08615991f"
  }
 ]

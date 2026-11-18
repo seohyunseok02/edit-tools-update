@@ -87,6 +87,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     <div class="drop" id="dropM" tabindex="0" role="button"><b>편집이 끝난 본편</b><span id="nameM">말자막까지 들어간 완성 .prproj</span></div>
     <input type="file" id="fileM" accept=".prproj" hidden>
     <p class="note" id="info"></p>
+    <div class="note" id="learnNote" hidden></div>
     <div class="msg" id="err1" hidden></div>
   </section>
 
@@ -1233,7 +1234,7 @@ function makePrompt() {
 - 의료 광고다. 조각을 이어 붙였을 때 원래 뜻과 다르게 들리거나, 효과를 보장하는 것처럼 들리거나, 실제보다 위험을 부풀려 겁주는 것처럼 들리면 안 된다. 원장이 한 말의 뜻이 그대로 살아 있어야 한다.
 - 답하기 전에 스스로 확인하라: (1) 이 안에 듣고 나서 기억에 남는 말이 하나라도 있는가 (2) 처음 보는 사람이 무슨 얘기인지 아는가 (3) 끝까지 보고 싶은 궁금증이 남는가. 하나라도 아니면 그 안은 버리고 다시 골라라.
 - type: 안의 방향(위의 이름 중 하나). why: 그 안이 왜 시청자를 붙잡는지 한 구절. 조각의 why: 그 조각의 역할(예: "주제 알리기", "귀에 꽂히는 한마디", "반박", "궁금증 남기기").
-
+${learnedText()}
 아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라. parts는 놓을 순서대로 적는다.
 {"plans":[{"type":"반박형","why":"…","parts":[{"from":41,"to":41,"why":"…"},{"from":12,"to":13,"why":"…"}]}]}
 
@@ -1333,7 +1334,10 @@ function zipStore(name, data) {
   eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, 1, true); eo.setUint16(10, 1, true); eo.setUint32(12, 46 + nm.length, true); eo.setUint32(16, 30 + nm.length + data.length, true);
   return new Blob([lh, nm, data, cd, nm, eo]);
 }
+function learnApi() { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } }
 async function saveOut(bytes, name) {
+  const LA = learnApi(); // 프로그램 안: 저장 창은 프로그램이 띄우고, 만든 내용을 학습용으로 기록해 둔다
+  if (LA && !window.__testSave) { const r = await LA.save({ tool: 'highlight', client: '공통', name, bytes, base: name.replace(/_\d{6}\.prproj$/i, ''), meta: st.saveMeta || null }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다. 프리미어에서 고쳐 저장하면 다음에 이 편집기를 열 때 고친 내용을 배웁니다.'; }
   if (window.showSaveFilePicker) { try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere Pro 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(bytes); await w.close(); return name + ' 로 저장했습니다.'; } catch (e) { if (e && e.name === 'AbortError') return '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.'; } }
   if (st.save) { const zn = name.replace(/\.prproj$/i, '') + '.zip'; await st.save.save({ filename: zn, data: zipStore(name, bytes) }); return zn + ' 로 받았습니다. 압축을 풀면 ' + name + ' 이 나옵니다.'; }
   const a = el('a', { href: URL.createObjectURL(new Blob([bytes])), download: name }); document.body.append(a); a.click(); a.remove(); return name + ' 로 받았습니다.';
@@ -1346,6 +1350,7 @@ $('btnBuild').onclick = async () => {
     const r = E.buildHighlight(P, an, plan, { gapSec: +$('gap').value || 0, skipLongSec: $('skipLong').checked ? 60 : 0 });
     $('buildState').textContent = '파일로 묶는 중…'; await new Promise(r2 => setTimeout(r2, 30));
     const bytes = await P.encode(), d = new Date(), stamp = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    st.saveMeta = { shift: r.shift / E.TICKS, total: r.total / E.TICKS }; // 하이라이트 길이와 본편이 밀린 만큼: 나중에 고친 하이라이트를 찾을 때 쓴다
     const msg = await saveOut(bytes, st.name.replace(/\.prproj$/i, '') + '_하이라이트_' + stamp + '.prproj');
     $('log').textContent = [`하이라이트 ${(r.total / T).toFixed(1)}초를 "${an.seq.name}" 맨 앞에 넣었습니다 (조각 ${r.segs.length}개, 영상 클립 ${r.video}개, 소리 클립 ${r.audio}개).`, ...r.segs.map((s, i) => `  조각 ${i + 1}  →  ${tc(s.start / T)} ~ ${tc(s.end / T)}`), `본편은 ${(r.shift / T).toFixed(2)}초 뒤로 밀렸습니다.`, ...r.log.map(x => '· ' + x), '· 시퀀스 마커와 캡션 트랙은 옮기지 않았습니다. 쓰고 있다면 프리미어에서 맞춰 주세요.', '', msg].join('\n');
     $('buildState').textContent = '만들었습니다.'; st.built = true;
@@ -1364,10 +1369,44 @@ function renderGuide() {
   $('guideNext').textContent = '지금 할 일: ' + (cur < 0 ? '다 됐습니다. 받은 파일을 프리미어에서 열어 맨 앞 하이라이트를 확인하세요.' : steps[cur][2]);
 }
 
+/* ---------- 고친 내용 학습 (프로그램 안에서만) ----------
+   이 편집기로 만든 하이라이트를 사람이 프리미어에서 고쳐 저장하면, AI가 제안해 넣은 하이라이트 대사와 최종으로 남은 대사를 비교해 팀 공유 기록에 쌓고 다음 요청문에 넣는다. */
+st.learned = [];
+const oneText = s => String(s || '').replace(/\s+/g, ' ').trim();
+async function loadLearned(fresh) {
+  const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA) return;
+  try {
+    const r = await LA.load({ tool: 'highlight', client: '공통' }); st.learned = r.items || []; const n = countLearned();
+    box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (n ? `편집자들이 고친 하이라이트 ${n}건(${r.people}명)을 요청문에 넣습니다.` : '아직 편집자가 고친 기록이 없습니다. 만든 프로젝트를 프리미어에서 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
+  } catch (e) { box.hidden = true; }
+}
+const countLearned = () => st.learned.filter(x => x.kind === 'hook').length;
+async function hookLines(bytes, name, sec) { const P = await E.Proj.fromBytes(new Uint8Array(bytes), name), an = E.analyzeMid(P); return E.spokenLines(P, an, [[0, sec * E.TICKS]]).lines.map(l => ({ t0: l.t0 / E.TICKS, text: oneText(l.text) })).filter(l => l.text); }
+function hookDiff(g, c, m) { // 본편 첫 세 줄이 시작되는 곳을 찾고, 그 앞을 최종 하이라이트로 본다
+  const made = g.filter(l => l.t0 < m.total - 0.1).map(l => l.text), body = g.filter(l => l.t0 >= m.shift - 0.1).slice(0, 3).map(l => l.text);
+  if (!made.length || !body.length) return null;
+  for (let i = 0; i + body.length <= c.length; i++) if (body.every((t, k) => c[i + k].text === t)) return [{ kind: 'hook', made, final: c.slice(0, i).map(l => l.text), sec: Math.round(c[i].t0 * 10) / 10 }];
+  return null; // 본편을 못 찾으면 다른 프로젝트일 수 있으니 배우지 않는다
+}
+async function learnFromEdits() {
+  const LA = learnApi(); if (!LA) return 0; let n = 0, list = [];
+  try { list = await LA.pending('highlight'); } catch (e) { return 0; } // 예전 프로그램 틀에서는 하이라이트 학습이 없다
+  for (const p of list) {
+    try { if (!p.meta) continue; const items = hookDiff(await hookLines(p.gen, 'made.prproj', p.meta.shift + 40), await hookLines(p.cur, p.name, p.meta.shift + 90), p.meta); if (!items) continue; await LA.put({ tool: 'highlight', client: '공통', rec: p.id, mtime: p.mtime, items }); n += items.length; } catch (e) {}
+  }
+  return n;
+}
+function learnedText() {
+  const H = st.learned.filter(x => x.kind === 'hook' && Array.isArray(x.made) && Array.isArray(x.final)).slice(-8); if (!H.length) return '';
+  const q = a => a.length ? a.map(t => '"' + String(t).slice(0, 60) + '"').join(' / ') : '(하이라이트를 통째로 뺐다)';
+  return '\n[이 팀 편집자들이 고친 하이라이트] AI가 제안한 것과 편집자가 최종으로 남긴 것이다. 편집자가 어떤 말을 살리고 빼고 더했는지 보고 그 기준을 따르라.\n' + H.map(x => `· 제안: ${q(x.made)}\n  최종: ${q(x.final)}`).join('\n') + '\n';
+}
+
 (async () => {
   await 0; setupModes(); renderGuide();
   try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = (p, onText) => s.json(p, { modelTier: 'default', cache: false, onText }); st.save = await window.claude.use('downloads'); } } catch {}
   setupModes();
+  learnFromEdits().then(n => loadLearned(n)).catch(() => {});
 })();
 </script>
 

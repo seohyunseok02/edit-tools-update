@@ -100,6 +100,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
       <div class="drop" id="dropS" tabindex="0" role="button"><b>쇼츠 디자인 프로젝트</b><span id="nameS">자막·효과음 견본이 든 세로 .prproj</span></div>
     </div>
     <input type="file" id="fileM" accept=".prproj" hidden><input type="file" id="fileS" accept=".prproj" hidden>
+    <div class="note" id="learnNote" hidden></div>
     <div class="msg" id="err1" hidden></div>
   </section>
 
@@ -1291,7 +1292,7 @@ function promptCands() {
 - ranges는 재생 순서대로 1~3개 조각의 배열이다. 맨 앞에 보여줄 문장이 구간 중간이나 뒤에 있으면 그 부분을 첫 조각으로 떼어 앞에 놓고, 나머지를 뒤에 붙여라. 필요 없는 문장은 조각 사이에서 건너뛰어도 된다.
 - 조각의 시작과 끝은 반드시 대본 줄에 적힌 시작초/끝초 값을 그대로 써라.
 - 후보끼리 구간이 겹치지 않게 하라.
-
+${learnedText('cands')}
 아래 모양의 JSON만 답하라.
 {"candidates":[{"type":"자극","open":"바로시작","name":"후보를 한눈에 알 수 있는 짧은 이름","ranges":[[301.2,304.0],[287.3,322.1]],"hook":"맨 앞에 나오는 문장 그대로","reason":"왜 쇼츠감인지 한 문장"}]}
 
@@ -1326,7 +1327,7 @@ ${fx}
 5) caps: "(받아쓰기)" 줄은 화면 아래 말자막으로 나간다. 말자막은 인물이 실제로 한 말과 거의 똑같아야 한다. 요약하거나 다른 표현으로 바꾸지 마라. {"줄번호":"바로잡은 자막"} 모양으로 받아쓰기 줄 번호를 하나도 빼지 말고 넣어라. 할 일은 하나뿐이다: 받아쓰기가 잘못 들은 낱말을 실제로 한 말로 되돌리는 것(예: "마시셔도"→"맞으셔도", "습관이"→"효과가", "만드셔야"→"맞으셔야"). 아래 참고 2(같은 촬영분의 다른 편집본 자막)가 가장 믿을 만한 근거이니, 해당하는 문장을 찾아 그 낱말과 어미를 그대로 따르라. 말투, 어미("~고요", "~하시면", "~봅니다"), 낱말 순서를 바꾸지 말고, 한 말을 빼거나 없는 말을 더하지 마라. 각 줄에는 그 줄의 시간에 실제로 들리는 부분만 담아라(문장이 여러 줄에 걸쳐 있으면 받아쓰기 줄이 나뉜 자리 그대로 나눈다). 마침표와 쉼표만 지워라. 확신이 없는 낱말은 받아쓰기 그대로 둬라.
 6) emoji: hook과 emph 각 항목에 어울리는 이모지를 아래 목록의 이름 그대로 하나 골라 넣어라. 어울리는 게 없거나 목록이 비었으면 빈 문자열.
 
-지킬 것: 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라. 자극은 말투와 궁금증으로만 올려라.
+${learnedText('detail')}지킬 것: 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라. 자극은 말투와 궁금증으로만 올려라.
 
 이모지 목록: ${sh.emojis.length ? sh.emojis.map(e => e.name).join(', ') : '(없음)'}
 
@@ -1460,7 +1461,7 @@ function promptAll() {
 - labels: 효과자막 중 강조 문구가 아니라 삽입 이미지에 붙은 이름표(제품명·기기명 등)인 것의 번호 배열. emph에는 넣지 마라.
 - emoji: opening과 emph 각 항목에 어울리는 이모지를 아래 목록의 이름 그대로 하나 골라 넣어라. 어울리는 게 없거나 목록이 비었으면 빈 문자열.
 
-지킬 것: 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라. 자극은 말투와 궁금증으로만 올려라.
+${learnedText('detail')}지킬 것: 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라. 자극은 말투와 궁금증으로만 올려라.
 
 이모지 목록: ${sh.emojis.length ? sh.emojis.map(e => e.name).join(', ') : '(없음)'}
 
@@ -1644,7 +1645,10 @@ function zipStore(name, data) {
   eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, 1, true); eo.setUint16(10, 1, true); eo.setUint32(12, 46 + nm.length, true); eo.setUint32(16, 30 + nm.length + data.length, true);
   return new Blob([lh, nm, data, cd, nm, eo]);
 }
+function learnApi() { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } }
 async function saveOut(bytes, name) {
+  const LA = learnApi(); // 프로그램 안: 저장 창은 프로그램이 띄우고, 만든 내용을 학습용으로 기록해 둔다
+  if (LA && !window.__testSave) { const r = await LA.save({ tool: 'shorts', client: '공통', name, bytes, base: name.replace(/_\d{6}\.prproj$/i, ''), meta: st.saveMeta || null }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다. 프리미어에서 고쳐 저장하면 다음에 이 편집기를 열 때 고친 내용을 배웁니다.'; }
   if (window.showSaveFilePicker) { try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere Pro 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(bytes); await w.close(); return name + ' 로 저장했습니다.'; } catch (e) { if (e && e.name === 'AbortError') return '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.'; } }
   if (st.save) { const zn = name.replace(/\.prproj$/i, '') + '.zip'; await st.save.save({ filename: zn, data: zipStore(name, bytes) }); return zn + ' 로 받았습니다. 압축을 풀면 ' + name + ' 이 나옵니다.'; }
   const a = el('a', { href: URL.createObjectURL(new Blob([bytes])), download: name }); document.body.append(a); a.click(); a.remove(); return name + ' 로 받았습니다.';
@@ -1658,21 +1662,81 @@ $('btnBuild').onclick = async () => {
     const has = (c, re) => c ? c.layers.findIndex(L => re.test(L.text || '')) : -1;
     sh.roles.emphBig = sh.T.emph ? Math.max(0, has(sh.T.emph, /강조/)) : -1; sh.roles.emphSmall = sh.T.emph ? (has(sh.T.emph, /첨자/) >= 0 ? has(sh.T.emph, /첨자/) : sh.T.emph.layers.length > 1 ? 1 - sh.roles.emphBig : -1) : -1;
     sh.roles.titleSub = sh.T.title ? (has(sh.T.title, /부제목/) >= 0 ? has(sh.T.title, /부제목/) : sh.T.title.layers.length > 1 ? 1 : -1) : -1; sh.roles.titleMain = sh.T.title ? sh.T.title.layers.findIndex((L, i) => i !== sh.roles.titleSub) : -1;
-    let n = 0;
+    let n = 0; const made = [];
     for (const c of st.cands) {
       if (!c.sel || !c.detail) continue; const d = c.detail, t = d.titles[d.pick] || d.titles[0];
       const plan = { ranges: c.tick, title: { main: t.main, sub: t.sub }, hook: d.hook.style !== 'none' && (d.hook.big || d.hook.small) ? d.hook : null, emph: d.emph.map(e => ({ big: e.big, small: e.small, emoji: e.emoji, design: e.design, t0: e.t0, t1: emphWindow(e)[1], r: e.r })), captions: captionLines(c).map(x => ({ t0: x.t0, t1: x.t1, text: x.l.text, r: x.l.r })), inserts: d.inserts.filter(x => x.mode !== 'drop').map(x => ({ id: x.id, mode: x.mode })) };
-      const r = E.buildShort(st.M, S, an, sh, plan, { camX: st.prof.camX, factor: st.prof.factor }); n++;
+      const r = E.buildShort(st.M, S, an, sh, plan, { camX: st.prof.camX, factor: st.prof.factor }); n++; made.push({ start: r.start, end: r.end, name: c.name || '', type: c.type || '' });
       lines.push(`쇼츠 ${n} "${t.main}" → ${sh.seq.name} 시퀀스 ${tc(r.start / T)} ~ ${tc(r.end / T)}`); for (const w of r.log) lines.push('   · ' + w);
     }
     if (!n) throw new Error('문구까지 준비된 구간이 없습니다.');
     $('buildState').textContent = '파일로 묶는 중…'; await new Promise(r => setTimeout(r, 30));
     const bytes = await S.encode(), d = new Date(), stamp = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+    st.saveMeta = { seq: sh.seq.name, shorts: made }; // 쇼츠마다 놓인 자리: 나중에 고친 쇼츠를 찾을 때 쓴다
     const msg = await saveOut(bytes, st.S.name.replace(/\.prproj$/i, '') + '_자동쇼츠_' + stamp + '.prproj');
     lines.push('', msg, '프리미어에서 열어 위 위치로 가면 새 쇼츠가 있습니다.'); $('log').textContent = lines.join('\n'); $('buildState').textContent = `쇼츠 ${n}편을 만들었습니다.`;
   } catch (er) { show('err4', '만들지 못했습니다: ' + (er.message || er.code || er)); $('buildState').textContent = ''; }
   $('btnBuild').disabled = !st.cands.some(c => c.sel && c.detail);
 };
+
+/* ---------- 고친 내용 학습 (프로그램 안에서만) ----------
+   이 편집기로 만든 쇼츠를 사람이 프리미어에서 고쳐 저장하면, 쇼츠마다 제목·강조 자막·말자막이 어떻게 바뀌었는지, 쇼츠를 통째로 지웠는지를 비교해
+   팀 공유 기록에 쌓고 다음 요청문(후보 고르기, 문구 쓰기)에 넣는다. */
+st.learned = [];
+const oneText = s => String(s || '').replace(/\s+/g, ' ').trim();
+async function loadLearned(fresh) {
+  const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA) return;
+  try {
+    const r = await LA.load({ tool: 'shorts', client: '공통' }); st.learned = r.items || []; const n = countLearned();
+    box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (n ? `편집자들이 고친 쇼츠 기록 ${n}건(${r.people}명)을 요청문에 넣습니다.` : '아직 편집자가 고친 기록이 없습니다. 만든 프로젝트를 프리미어에서 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
+  } catch (e) { box.hidden = true; }
+}
+const countLearned = () => st.learned.filter(x => x && x.kind).length;
+function shortTexts(P, seqName, a, b) {
+  const sq = P.seqs().find(x => x.name === seqName); if (!sq) return null; const out = [];
+  sq.vtracks.forEach((t, ti) => { for (const node of P.items(t)) { const c = P.info(node); if (c.kind !== 'text' || c.end <= a || c.start >= b) continue; const text = c.layers.filter(L => !L.off).map(L => oneText(L.text)).filter(Boolean).join(' / '); if (text) out.push({ ti, start: c.start, end: c.end, text }); } });
+  return out;
+}
+function shortDiff(G, C, m) {
+  const items = [], longest = a => a.reduce((x, y) => (y.end - y.start > x.end - x.start ? y : x));
+  for (const sm of m.shorts || []) {
+    const g = shortTexts(G, m.seq, sm.start, sm.end), c = shortTexts(C, m.seq, sm.start, sm.end); if (!g || !c || !g.length) continue;
+    if (!c.length) { items.push({ kind: 'dropped', name: sm.name, type: sm.type }); continue; } // 쇼츠를 통째로 지움
+    const tg = longest(g), tf = longest(c); // 쇼츠 내내 떠 있는 제목이 가장 긴 글자 클립이다
+    items.push(tg.text === tf.text ? { kind: 'kept', name: sm.name, type: sm.type, title: tg.text } : { kind: 'title', name: sm.name, type: sm.type, was: tg.text, now: tf.text });
+    const cnt = {}; g.forEach(x => { cnt[x.ti] = (cnt[x.ti] || 0) + 1; }); const capTi = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0]; // 말자막 트랙 = 글자 클립이 가장 많은 트랙
+    const used = new Set([c.indexOf(tf)]); let k = 0;
+    for (const x of g) {
+      if (x === tg) continue; const role = x.ti === capTi ? 'cap' : 'emph', j = c.findIndex((y, i) => !used.has(i) && y.ti === x.ti && Math.abs(y.start - x.start) < 0.5 * E.TICKS);
+      if (j < 0) { if (role === 'emph') items.push({ kind: 'removed', role, text: x.text }); continue; }
+      used.add(j); if (c[j].text !== x.text && k++ < 40) items.push({ kind: 'text', role, was: x.text, now: c[j].text });
+    }
+    c.forEach((y, i) => { if (!used.has(i) && y.ti !== capTi) items.push({ kind: 'added', role: 'emph', text: y.text }); });
+  }
+  return items;
+}
+async function learnFromEdits() {
+  const LA = learnApi(); if (!LA) return 0; let n = 0, list = [];
+  try { list = await LA.pending('shorts'); } catch (e) { return 0; } // 예전 프로그램 틀에서는 쇼츠 학습이 없다
+  for (const p of list) {
+    try { if (!p.meta || !p.meta.seq) continue; const items = shortDiff(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), p.meta); await LA.put({ tool: 'shorts', client: '공통', rec: p.id, mtime: p.mtime, items }); n += items.length; } catch (e) {}
+  }
+  return n;
+}
+function learnedText(part) {
+  const L = st.learned || [], q = x => '"' + String(x).slice(0, 60) + '"', g = k => L.filter(x => x && x.kind === k);
+  if (part === 'cands') {
+    const kept = g('kept').concat(g('title')).slice(-12), drop = g('dropped').slice(-12); if (!kept.length && !drop.length) return '';
+    return '- 이 팀이 실제로 살려서 쓴 쇼츠와 만들어 놓고 버린 쇼츠다. 살린 쪽과 비슷한 구간을 고르고, 버린 쪽과 비슷한 구간은 피하라:\n' + kept.map(x => `  · 살림: [${x.type}] ${x.name}`).concat(drop.map(x => `  · 버림: [${x.type}] ${x.name}`)).join('\n') + '\n';
+  }
+  const out = [], em = g('text').filter(x => x.role === 'emph'), cp = g('text').filter(x => x.role === 'cap');
+  if (g('title').length) out.push('편집자가 고친 쇼츠 제목 (AI 제목 → 최종. 고친 쪽의 길이와 말투를 따르라):\n' + g('title').slice(-15).map(x => `· ${q(x.was)} → ${q(x.now)}`).join('\n'));
+  if (em.length) out.push('편집자가 고친 강조 자막 (고친 쪽을 따르라):\n' + em.slice(-20).map(x => `· ${q(x.was)} → ${q(x.now)}`).join('\n'));
+  if (g('removed').length) out.push('편집자가 지운 강조 자막 (이런 문구는 넣지 마라):\n' + g('removed').slice(-10).map(x => `· ${q(x.text)}`).join('\n'));
+  if (cp.length) out.push('편집자가 바로잡은 말자막 (받아쓰기를 바로잡을 때 같은 낱말은 똑같이 고쳐라):\n' + cp.slice(-25).map(x => `· ${q(x.was)} → ${q(x.now)}`).join('\n'));
+  return out.length ? '[이 팀 편집자들이 쇼츠를 고친 기록]\n' + out.join('\n\n') + '\n\n' : '';
+}
+learnFromEdits().then(n => loadLearned(n)).catch(() => {});
 </script>
 
 </body>
