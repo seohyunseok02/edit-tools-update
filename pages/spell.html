@@ -81,6 +81,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     <input type="file" id="fileM" accept=".prproj" hidden>
     <div class="actions" id="seqRow" hidden><label>시퀀스 <select id="seqSel"></select></label><label><input type="checkbox" id="incOff"> 꺼 둔 클립·숨긴 레이어도 검사</label><span class="note" id="midInfo"></span></div>
     <details id="allBox" hidden><summary id="allSum">읽은 글자 전체 보기</summary><div class="all" id="allList"></div></details>
+    <div class="note" id="learnNote" hidden></div>
     <div class="msg" id="err1" hidden></div>
   </section>
 
@@ -915,7 +916,7 @@ function learnStyle(P, cat) {
     const said = spokenLines(P, an, [[c.start, c.end]]).lines.map(l => l.text).join(' ');
     const s = an.sfx.find(a => Math.abs(a.start - c.start) < 0.2 * TICKS);
     usage[d.name] = (usage[d.name] || 0) + 1;
-    ex.push({ said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
+    ex.push({ t: Math.round(c.start / TICKS * 10) / 10, said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
   }
   const first = an.captions.length ? an.captions[0].start : 0, last = an.captions.length ? an.captions[an.captions.length - 1].end : an.seqEnd;
   // 효과자막 없이 말자막으로만 나간 말 (어떤 말에는 넣지 않는지 배우는 용도)
@@ -1229,7 +1230,7 @@ function prompts() {
 - 고치지 말 것: 말투와 구어체("~거든요", "~잖아요", "뭐", "좀"), 문장 끝을 다듬는 일, 낱말을 더 좋은 표현으로 바꾸는 일, 느낌표·물음표·말줄임표·이모지·특수기호, 마침표가 없는 것, 숫자와 단위의 표기 방식, 영어와 외래어 표기, 병원·의사·제품·기기·시술 이름. 자막이라 일부러 짧게 끊어 쓴 문장도 그대로 둔다.
 - "↵"는 자막 안의 줄바꿈이다. 위치와 개수를 그대로 둬라.
 - "¦"는 한 줄 안에서 글자 색이나 줄이 바뀌는 자리다. 고친 문장에도 같은 개수로, 같은 낱말 사이에 그대로 남겨 둬라. "¦" 바로 앞뒤의 띄어쓰기는 판단하지 마라(줄이 바뀌는 자리일 수 있다).
-- 확실히 틀린 것만 고쳐라. 둘 다 맞는 표기이거나 확신이 없으면 고치지 마라. 틀린 곳이 없는 문장은 답에 넣지 마라.${keep.length ? '\n- 다음 낱말은 그대로 둬라: ' + keep.join(', ') : ''}
+- 확실히 틀린 것만 고쳐라. 둘 다 맞는 표기이거나 확신이 없으면 고치지 마라. 틀린 곳이 없는 문장은 답에 넣지 마라.${keep.length ? '\n- 다음 낱말은 그대로 둬라: ' + keep.join(', ') : ''}${learnedText()}
 
 아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라. 틀린 문장이 하나도 없으면 {"fixes":[]} 라고 답하라.
 {"fixes":[{"n":12,"fixed":"고친 문장 전체","why":"띄어쓰기"}]}
@@ -1344,7 +1345,10 @@ function zipStore(name, data) {
   eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, 1, true); eo.setUint16(10, 1, true); eo.setUint32(12, 46 + nm.length, true); eo.setUint32(16, 30 + nm.length + data.length, true);
   return new Blob([lh, nm, data, cd, nm, eo]);
 }
+function learnApi() { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } }
 async function saveOut(bytes, name) {
+  const LA = learnApi(); // 프로그램 안: 저장 창은 프로그램이 띄우고, 만든 내용을 학습용으로 기록해 둔다
+  if (LA && !window.__testSave) { const r = await LA.save({ tool: 'spell', client: '공통', name, bytes, base: name.replace(/_\d{6}\.prproj$/i, '') }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다. 프리미어에서 고쳐 저장하면 다음에 이 편집기를 열 때 고친 내용을 배웁니다.'; }
   if (window.showSaveFilePicker) { try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere Pro 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(bytes); await w.close(); return name + ' 로 저장했습니다.'; } catch (e) { if (e && e.name === 'AbortError') return '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.'; } }
   if (st.save) { const zn = name.replace(/\.prproj$/i, '') + '.zip'; await st.save.save({ filename: zn, data: zipStore(name, bytes) }); return zn + ' 로 받았습니다. 압축을 풀면 ' + name + ' 이 나옵니다.'; }
   const a = el('a', { href: URL.createObjectURL(new Blob([bytes])), download: name }); document.body.append(a); a.click(); a.remove(); return name + ' 로 받았습니다.';
@@ -1369,10 +1373,57 @@ $('btnReport').onclick = async () => {
   try { await navigator.clipboard.writeText(text); $('buildState').textContent = '목록을 복사했습니다.'; } catch { $('log').textContent = text; $('buildState').textContent = '자동 복사가 막혀 있어 아래에 목록을 띄웠습니다.'; }
 };
 
+/* ---------- 고친 내용 학습 (프로그램 안에서만) ----------
+   이 편집기로 고친 프로젝트를 사람이 프리미어에서 다시 고쳐 저장하면, 같은 자리 자막의 글자를 비교해 "고치기 전 → 고친 뒤" 낱말 쌍을 팀 공유 기록에 쌓고 다음 요청문에 넣는다. */
+st.learned = [];
+function textMap(P) { // 시퀀스·트랙·시작 시각·레이어 번호가 같은 자막끼리 비교한다
+  const m = new Map();
+  for (const s of P.seqs()) s.vtracks.forEach((t, ti) => { for (const node of P.items(t)) { const c = P.info(node); if (c.kind !== 'text') continue; c.layers.forEach((L, li) => { if ((L.text || '').trim()) m.set(s.name + '|' + ti + '|' + c.start + '|' + li, L.text); }); } });
+  return m;
+}
+function wordPairs(a, b) { // 글자 단위로 맞춘 뒤, 달라진 곳을 앞뒤 낱말 경계까지 넓혀 쌍으로 만든다
+  const al = E.lcsAlign(a, b), anchors = [], out = []; for (let i = 0; i < a.length; i++) if (al.to[i] >= 0) anchors.push([i, al.to[i]]); anchors.push([a.length, b.length]);
+  let pa = 0, pb = 0; const sp = ch => /\s/.test(ch);
+  for (const [x, y] of anchors) {
+    if (x > pa || y > pb) {
+      let s1 = pa, e1 = x, s2 = pb, e2 = y;
+      while (s1 > 0 && !sp(a[s1 - 1])) s1--; while (e1 < a.length && !sp(a[e1])) e1++; while (s2 > 0 && !sp(b[s2 - 1])) s2--; while (e2 < b.length && !sp(b[e2])) e2++;
+      const w = a.slice(s1, e1).trim(), n = b.slice(s2, e2).trim(); if (w !== n && w.length <= 20 && n.length <= 20 && (w || n)) out.push({ was: w, now: n });
+    }
+    pa = x + 1; pb = y + 1;
+  }
+  return out;
+}
+async function learnFromEdits() {
+  const LA = learnApi(); if (!LA) return 0; let n = 0;
+  for (const p of await LA.pending('spell')) {
+    try {
+      const A = textMap(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj')), B = textMap(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name)), items = []; let same = 0;
+      for (const [k, t] of A) { const u = B.get(k); if (u == null) continue; same++; if (u === t) continue; for (const x of wordPairs(t, u)) if (!items.some(y => y.was === x.was && y.now === x.now)) items.push(Object.assign({ kind: 'pair' }, x)); }
+      if (A.size && same < A.size * 0.3) continue; // 자막 자리가 거의 다 다르면 다른 프로젝트를 잘못 집은 것으로 보고 배우지 않는다
+      await LA.put({ tool: 'spell', client: '공통', rec: p.id, mtime: p.mtime, items }); n += items.length;
+    } catch (e) {}
+  }
+  return n;
+}
+async function loadLearned(fresh) {
+  const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA) return;
+  try {
+    const r = await LA.load({ tool: 'spell', client: '공통' }), cnt = new Map();
+    for (const x of r.items || []) { if (x.kind !== 'pair' || typeof x.was !== 'string' || typeof x.now !== 'string') continue; const k = x.was + '\u0000' + x.now; cnt.set(k, (cnt.get(k) || 0) + 1); }
+    st.learned = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 80).map(([k, n]) => { const [was, now] = k.split('\u0000'); return { was, now, n }; });
+    box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (st.learned.length ? `편집자들이 직접 고친 낱말 ${st.learned.length}가지(${r.people}명)를 검사 요청문에 넣습니다.` : '아직 편집자가 고친 기록이 없습니다. 고친 프로젝트를 프리미어에서 다시 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
+  } catch (e) { box.hidden = true; }
+}
+function learnedText() {
+  if (!st.learned.length) return '';
+  return '\n- 이 팀의 편집자들이 직접 고친 예다. 같은 낱말이 나오면 똑같이 고쳐라. 위 규칙과 부딪치면 편집자의 선택을 따른다 (고치기 전 → 고친 뒤):\n' + st.learned.map(x => `  · ${x.was ? '"' + x.was + '"' : '(없음)'} → ${x.now ? '"' + x.now + '"' : '(지움)'}`).join('\n');
+}
 (async () => {
   await 0; setupModes();
   try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = p => s.json(p, { modelTier: 'default', cache: false }); st.save = await window.claude.use('downloads'); } } catch {}
   setupModes();
+  learnFromEdits().then(n => loadLearned(n)).catch(() => {});
 })();
 </script>
 

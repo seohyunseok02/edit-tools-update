@@ -19,6 +19,10 @@ nav button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 nav button[aria-selected=true]{color:var(--ink);font-weight:700;background:var(--bg);border-color:var(--line);box-shadow:inset 0 3px 0 var(--accent)}
 #ver{margin-left:auto;color:var(--mute);font-size:12px;padding:0 4px}
 #upd{font:inherit;font-weight:700;color:var(--accent-ink);background:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:6px 14px;margin-bottom:6px;cursor:pointer}
+.learn{font:inherit;font-size:12px;color:var(--mute);background:none;border:1px solid var(--line);border-radius:8px;padding:4px 10px;margin:0 0 6px auto;cursor:pointer}
+.learn:hover{color:var(--ink)}
+.learn[data-state=none],.learn[data-state=off]{color:var(--accent);border-color:var(--accent)}
+.learn + #ver{margin-left:8px}
 main{flex:1;min-height:0;position:relative}
 iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
 iframe[hidden]{display:none}
@@ -45,8 +49,15 @@ if (window.appUpdate) {
     if (document.getElementById('upd')) return; const b = document.createElement('button'); b.id = 'upd'; b.type = 'button';
     if (r.needInstall) { b.textContent = '새 설치 파일이 필요한 업데이트가 있습니다'; b.disabled = true; }
     else { b.textContent = '새 버전 ' + r.n + ' 받음 · 눌러서 적용'; b.title = '지금 작업 중인 내용은 사라집니다. 저장한 뒤 누르세요. 누르지 않아도 다음에 켤 때 적용됩니다.'; b.onclick = () => appUpdate.apply(); }
-    nav.insertBefore(b, ver); ver.style.marginLeft = '8px'; b.style.marginLeft = 'auto';
+    nav.insertBefore(b, ver); ver.style.marginLeft = '8px'; b.style.marginLeft = document.getElementById('learn') ? '8px' : 'auto';
   });
+}
+// 공유 학습 폴더: 사람들이 고친 내용을 팀이 같이 쓰는 곳 (사무실 나스). 정하지 않으면 이 PC에만 쌓인다.
+if (window.learnApi) {
+  const b = document.createElement('button'); b.id = 'learn'; b.type = 'button'; b.className = 'learn';
+  const draw = c => { b.textContent = !c || !c.dir ? '공유 학습 폴더 정하기' : c.ok ? '학습 공유 중' : '학습 폴더 연결 안 됨'; b.title = !c || !c.dir ? '사람들이 고친 내용을 팀이 함께 쓰려면 사무실 나스의 공용 폴더를 골라 주세요. 정하지 않으면 이 PC에서 고친 것만 배웁니다.' : (c.ok ? '' : '지금은 이 폴더에 연결되지 않아 이 PC에만 쌓아 두고, 연결되면 올립니다.\n') + c.dir + '\n눌러서 바꾸기'; b.dataset.state = !c || !c.dir ? 'none' : c.ok ? 'ok' : 'off'; };
+  b.onclick = () => learnApi.pick().then(c => { if (c) draw(c); }).catch(() => {});
+  learnApi.config().then(draw).catch(() => {}); nav.insertBefore(b, ver);
 }
 let last = null; try { last = localStorage.getItem('hub-tab'); } catch {}
 open(TOOLS.some(t => t[0] === last) ? last : 'fx');

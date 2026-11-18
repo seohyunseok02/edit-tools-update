@@ -101,6 +101,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     </div>
     <input type="file" id="fileT" accept=".prproj" hidden><input type="file" id="fileL" accept=".prproj" multiple hidden>
     <div class="kv" id="clientInfo" hidden></div>
+    <div class="note" id="learnNote" hidden></div>
     <div class="msg" id="err1" hidden></div>
   </section>
 
@@ -953,7 +954,7 @@ function learnStyle(P, cat) {
     const said = spokenLines(P, an, [[c.start, c.end]]).lines.map(l => l.text).join(' ');
     const s = an.sfx.find(a => Math.abs(a.start - c.start) < 0.2 * TICKS);
     usage[d.name] = (usage[d.name] || 0) + 1;
-    ex.push({ said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
+    ex.push({ t: Math.round(c.start / TICKS * 10) / 10, said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
   }
   const first = an.captions.length ? an.captions[0].start : 0, last = an.captions.length ? an.captions[an.captions.length - 1].end : an.seqEnd;
   // 효과자막 없이 말자막으로만 나간 말 (어떤 말에는 넣지 않는지 배우는 용도)
@@ -1229,7 +1230,7 @@ function fillClients() {
 async function pickClient(name) {
   st.cur = name; store.set('fx-last', name); st.tp = null; st.cat = null; const c = st.clients[name]; show('err1', '');
   if (c && c.tplBytes) { try { st.tp = await E.Proj.fromBytes(c.tplBytes, c.tplName); st.cat = E.analyzeTemplate(st.tp); } catch (er) { show('err1', '보관된 템플릿을 읽지 못했습니다: ' + er.message); } }
-  renderClient(); ready();
+  renderClient(); ready(); loadLearned();
 }
 /* ---------- 다른 업체 스타일 빌려오기 ----------
    새 업체처럼 자기 완성본이 없을 때, 분위기가 비슷한 업체의 스타일을 출발점으로 쓴다.
@@ -1348,11 +1349,12 @@ function makePrompt() {
     const sk = s.skipped || [], st2 = Math.max(1, Math.floor(sk.length / 30));
     if (sk.length) style += `\n\n이 업체가 효과자막을 넣지 않고 말자막으로만 둔 말의 예 (이런 말에는 넣지 마라):\n` + sk.filter((_, i) => i % st2 === 0).slice(0, 30).map(t => `· "${t}"`).join('\n');
   }
+  const fixed = learnedText();
   return `너는 유튜브 정보 영상(병원 원장 인터뷰)의 편집자다. 아래 영상에 효과자막을 넣을 자리를 고르고 문구를 써라. 효과자막은 말의 핵심을 화면에 크게 띄우는 강조 문구이고, 떠 있는 동안에는 화면 아래 말자막 대신 나간다.
 
 [이 업체의 스타일]
 ${style}
-
+${fixed ? '\n[편집자들이 이 업체 영상에서 직접 고친 기록 — 위 스타일보다 우선해서 따를 것]\n' + fixed + '\n' : ''}
 [쓸 수 있는 디자인] 이름 : 줄 구성
 ${designs}
 
@@ -1564,7 +1566,10 @@ function zipStore(name, data) {
   eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, 1, true); eo.setUint16(10, 1, true); eo.setUint32(12, 46 + nm.length, true); eo.setUint32(16, 30 + nm.length + data.length, true);
   return new Blob([lh, nm, data, cd, nm, eo]);
 }
+function learnApi() { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } }
 async function saveOut(bytes, name) {
+  const LA = learnApi(); // 프로그램 안: 저장 창은 프로그램이 띄우고, 만든 내용을 학습용으로 기록해 둔다
+  if (LA && !window.__testSave) { const r = await LA.save({ tool: 'fx', client: st.cur, name, bytes, base: name.replace(/_\d{6}\.prproj$/i, '') }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다. 프리미어에서 고쳐 저장하면 다음에 이 편집기를 열 때 고친 내용을 배웁니다.'; }
   if (window.showSaveFilePicker) { try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere Pro 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(bytes); await w.close(); return name + ' 로 저장했습니다.'; } catch (e) { if (e && e.name === 'AbortError') return '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.'; } }
   if (st.save) { const zn = name.replace(/\.prproj$/i, '') + '.zip'; await st.save.save({ filename: zn, data: zipStore(name, bytes) }); return zn + ' 로 받았습니다. 압축을 풀면 ' + name + ' 이 나옵니다.'; }
   const a = el('a', { href: URL.createObjectURL(new Blob([bytes])), download: name }); document.body.append(a); a.click(); a.remove(); return name + ' 로 받았습니다.';
@@ -1583,12 +1588,60 @@ $('btnBuild').onclick = async () => {
   $('btnBuild').disabled = !st.items.some(x => x.on);
 };
 
+/* ---------- 고친 내용 학습 (프로그램 안에서만) ----------
+   이 편집기로 만든 프로젝트를 사람이 프리미어에서 고쳐 저장하면, 만든 것과 고친 것을 비교해 지운 것·추가한 것·문구·디자인 바꾼 것을 팀 공유 기록에 쌓고,
+   다음 요청문에 넣는다. 기록은 업체별이다. */
+st.learned = [];
+const fxText = e => [e.small, e.main, e.main2].filter(Boolean).join(' / ');
+function fxDiff(a, b) {
+  const used = new Set(), out = [];
+  for (const g of a) {
+    let k = b.findIndex((e, i) => !used.has(i) && Math.abs(e.t - g.t) < 1);
+    if (k < 0) k = b.findIndex((e, i) => !used.has(i) && e.said && e.said === g.said);
+    if (k < 0) { out.push({ kind: 'removed', said: g.said, design: g.design, text: fxText(g) }); continue; }
+    used.add(k); const e = b[k];
+    if (e.design !== g.design) out.push({ kind: 'design', said: e.said, from: g.design, to: e.design, text: fxText(e) });
+    if (fxText(e) !== fxText(g)) out.push({ kind: 'text', said: e.said, design: e.design, was: fxText(g), now: fxText(e) });
+  }
+  b.forEach((e, i) => { if (!used.has(i)) out.push({ kind: 'added', said: e.said, design: e.design, text: fxText(e) }); });
+  return a.length && used.size < a.length * 0.3 ? null : out; // 거의 다 다르면 다른 프로젝트를 잘못 집은 것으로 보고 배우지 않는다
+}
+async function learnFromEdits() {
+  const LA = learnApi(); if (!LA) return 0; let n = 0;
+  for (const p of await LA.pending('fx')) {
+    try {
+      const c = st.clients[p.client]; if (!c || !c.tplBytes) continue;
+      const cat = E.analyzeTemplate(await E.Proj.fromBytes(c.tplBytes, c.tplName));
+      const a = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), cat).examples, b = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), cat).examples;
+      const items = fxDiff(a, b); if (!items) continue;
+      await LA.put({ tool: 'fx', client: p.client, rec: p.id, mtime: p.mtime, items }); n += items.length;
+    } catch (e) {}
+  }
+  return n;
+}
+async function loadLearned(fresh) {
+  const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA || !st.cur) { box.hidden = true; return; }
+  try {
+    const r = await LA.load({ tool: 'fx', client: st.cur }); st.learned = r.items || [];
+    box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (st.learned.length ? `편집자들이 이 업체 영상에서 고친 기록 ${st.learned.length}건(${r.people}명)을 요청문에 넣습니다.` : '아직 이 업체에서 고친 기록이 없습니다. 만든 프로젝트를 프리미어에서 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
+  } catch (e) { box.hidden = true; }
+}
+function learnedText() {
+  const L = (st.learned || []).slice(-150), q = s => '"' + String(s || '').slice(0, 90) + '"', g = k => L.filter(x => x.kind === k), out = [];
+  if (g('removed').length) out.push('편집자가 지운 효과자막 (이런 말에는 넣지 마라):\n' + g('removed').slice(-25).map(x => `· ${q(x.said)} → ${x.design} | ${x.text}`).join('\n'));
+  if (g('added').length) out.push('편집자가 직접 추가한 효과자막 (이런 말에는 넣어라):\n' + g('added').slice(-25).map(x => `· ${q(x.said)} → ${x.design} | ${x.text}`).join('\n'));
+  if (g('text').length) out.push('편집자가 고친 문구 (고친 쪽의 길이와 말투를 따르라):\n' + g('text').slice(-30).map(x => `· ${q(x.was)} → ${q(x.now)}`).join('\n'));
+  if (g('design').length) out.push('편집자가 바꾼 디자인 (이런 말에는 바꾼 쪽이 맞다):\n' + g('design').slice(-25).map(x => `· ${q(x.said)} : ${x.from} → ${x.to}`).join('\n'));
+  return out.join('\n\n');
+}
+
 /* ---------- 시작 ---------- */
 (async () => {
   await 0; setupModes();
   for (const c of await DB.all()) st.clients[c.name] = c; st.cur = store.get('fx-last') || ''; fillClients(); if ($('client').value) await pickClient($('client').value); else renderClient();
   try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = (p, onText) => s.json(p, { modelTier: 'default', cache: false, onText }); st.save = await window.claude.use('downloads'); } } catch {}
   setupModes();
+  learnFromEdits().then(n => loadLearned(n)).catch(() => {});
 })();
 </script>
 

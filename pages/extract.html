@@ -930,7 +930,7 @@ function learnStyle(P, cat) {
     const said = spokenLines(P, an, [[c.start, c.end]]).lines.map(l => l.text).join(' ');
     const s = an.sfx.find(a => Math.abs(a.start - c.start) < 0.2 * TICKS);
     usage[d.name] = (usage[d.name] || 0) + 1;
-    ex.push({ said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
+    ex.push({ t: Math.round(c.start / TICKS * 10) / 10, said, design: d.name, small, main, main2, dur: Math.round((c.end - c.start) / TICKS * 10) / 10, sfx: s ? s.name : '', pos });
   }
   const first = an.captions.length ? an.captions[0].start : 0, last = an.captions.length ? an.captions[an.captions.length - 1].end : an.seqEnd;
   // 효과자막 없이 말자막으로만 나간 말 (어떤 말에는 넣지 않는지 배우는 용도)
