@@ -1185,7 +1185,162 @@ function fixMediaPaths(S, folder) {
   return { count: paths.length, paths };
 }
 
-const Engine = { TICKS, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
+/* ================= 소제목: 본내용 구간마다 소제목을 깔고, 구간이 바뀌는 곳에 업체 트랜지션을 넣는다 ================= */
+const isTransName = n => /trans/i.test(n) && !/intro|ending|preview/i.test(n);
+const isTplClipName = n => /^@|ending|intro|preview|trans/i.test(n);
+/* 템플릿에서 소제목 자막과 트랜지션(영상 + 같은 이름의 소리)을 찾는다 */
+function analyzeChapterTpl(Tp) {
+  let seq = null, bn = -1; for (const s of Tp.seqs()) { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; if (n > bn) { bn = n; seq = s; } }
+  if (!seq) throw new Error('템플릿에서 시퀀스를 찾지 못했습니다');
+  let sub = null, tv = null; const ta = [];
+  for (const t of seq.vtracks) for (const node of Tp.items(t)) {
+    const c = Tp.info(node);
+    if (!sub && c.kind === 'text' && c.layers.some(L => /소제목/.test(oneLine(L.text)))) sub = c;
+    if (!tv && c.kind !== 'text' && isTransName(c.name)) tv = c;
+  }
+  if (tv) for (const t of seq.atracks) for (const node of Tp.items(t)) { const c = Tp.info(node); if (c.name === tv.name && c.start >= tv.start - TICKS && c.start < tv.end) ta.push({ clip: c, offset: c.start - tv.start }); }
+  let slots = null;
+  if (sub) {
+    const ls = sub.layers.map(L => oneLine(L.text)), num = ls.findIndex((t, i) => /^\d{1,2}$/.test(t) && sub.layers[i].param); let main = -1, best = 0;
+    ls.forEach((t, i) => { if (i === num || !sub.layers[i].param || t.replace(/\s/g, '') === '소제목') return; if (t.length > best) { best = t.length; main = i; } });
+    if (main >= 0) slots = { num, main, inline: num < 0 && /^\d{1,2}\s/.test(ls[main]), sample: ls[main] };
+  }
+  return { seq, sub: slots ? Object.assign({ clip: sub }, slots) : null, trans: tv ? { v: tv, a: ta, dur: tv.end - tv.start } : null };
+}
+/* 완성된 본편에서 그 업체의 트랜지션 방식을 잰다 (초). lead: 컷보다 몇 초 앞에서 트랜지션이 시작하나, pre/post: 컷 앞뒤로 말 없이 늘린 길이 */
+function readTransStyle(P) {
+  const an = analyzeMid(P), fr = an.seq.frame, foot = an.footage.filter(c => !isTplClipName(c.name)), med = a => { if (!a.length) return 0; a = a.slice().sort((x, y) => x - y); return a[a.length >> 1]; };
+  const camNames = new Set(foot.map(c => baseName(c.media))), mic = an.voice.filter(c => !camNames.has(baseName(c.media))), voice = mic.length ? mic : an.voice; // 따로 녹음한 목소리가 있으면 그것으로 잰다
+  const tr = []; for (const t of an.seq.vtracks) for (const n of P.items(t)) { const c = P.info(n); if (c.kind !== 'text' && isTransName(c.name)) tr.push(c); }
+  const lead = [], pre = [], post = [];
+  for (const x of tr) {
+    const ends = foot.filter(c => c.end > x.start && c.end <= x.end).map(c => c.end); if (!ends.length) continue; const E0 = Math.max(...ends);
+    const starts = foot.filter(c => c.start >= E0 - fr).map(c => c.start); if (!starts.length) continue; const S0 = Math.min(...starts);
+    lead.push(E0 - x.start);
+    const ve = voice.filter(c => c.end <= E0 + fr && c.end > E0 - 4 * TICKS).map(c => c.end), vs = voice.filter(c => c.start >= S0 - fr && c.start < S0 + 4 * TICKS).map(c => c.start);
+    if (ve.length) pre.push(E0 - Math.max(...ve)); if (vs.length) post.push(Math.min(...vs) - S0);
+  }
+  if (!lead.length) return null;
+  const s = v => Math.round(Math.max(0, v) / TICKS * 100) / 100, r = { count: lead.length, lead: s(med(lead)), pre: s(med(pre)), post: s(med(post)) };
+  r.mode = r.pre + r.post >= 0.2 ? 'extend' : 'overlay'; return r;
+}
+const itemTimes = n => { const t = ch(n, 'ClipTrackItem', 'TrackItem') || ch(n, 'TransitionTrackItem', 'TrackItem'); return t ? { t, s: +txt(ch(t, 'Start')) || 0, e: +txt(ch(t, 'End')) || 0 } : null; };
+function setItemTimes(P, it, s, e) { let st = ch(it.t, 'Start'); const en = ch(it.t, 'End'); if (!st) { st = P.doc.createElement('Start'); it.t.insertBefore(st, en); it.t.insertBefore(P.doc.createTextNode('\n\t\t\t\t'), en); } st.textContent = String(s); en.textContent = String(e); }
+function trackNodes(P, track) { const out = []; for (const part of ['ClipItems', 'TransitionItems']) for (const e of chs(ch(track, 'ClipTrack', part, 'TrackItems'), 'TrackItem')) { const n = P.deref(e); if (n) out.push(n); } return out; }
+/* 원본 영상에서 클립 앞뒤로 더 쓸 수 있는 길이 (타임라인 틱). 속도를 바꾼 클립(예: 102%)은 그 비율로 계산한다 */
+function spare(P, node) {
+  const { clip } = P.clipEl(node); if (!clip) return { head: 0, tail: 0 }; const it = itemTimes(node), inN = clip.getElementsByTagName('InPoint')[0], outN = clip.getElementsByTagName('OutPoint')[0], i0 = +txt(inN) || 0, o0 = +txt(outN) || 0;
+  const rate = outN && it.e > it.s ? (o0 - i0) / (it.e - it.s) : 0; if (!(rate > 0.2 && rate < 5)) return { head: 0, tail: 0 };
+  const src = P.deref(clip.getElementsByTagName('Source')[0]), od = src && +txt(ch(src, 'OriginalDuration'));
+  return { head: i0 / rate, tail: od ? Math.max(0, od - o0) / rate : 0, in: i0, rate };
+}
+/* 클립의 타임라인 시간과 원본 시작점을 바꾼다 (속도 비율 유지) */
+function setRated(P, node, s, e, inPt, rate) {
+  setItemTimes(P, itemTimes(node), s, e); const { clip } = P.clipEl(node); if (!clip) return;
+  const inN = clip.getElementsByTagName('InPoint')[0], outN = clip.getElementsByTagName('OutPoint')[0]; if (inN) inN.textContent = String(Math.round(inPt)); if (outN) outN.textContent = String(Math.round(inPt + (e - s) * rate));
+}
+/* plan = [{kind:'intro'|'body'|'outro', t0, title, mute}] 시간 순. t0 = 그 구간이 시작하는 본편 시간(틱). mute = 그 구간 앞 경계에서 늘린 부분의 소리를 넣지 않음.
+   opt = { mode: 'overlay'|'extend', lead, pre, post } (초) */
+function buildChapters(M, Tp, an, tpl, plan, opt) {
+  opt = opt || {}; const log = [], seq = an.seq, fr = seq.frame, snap = t => Math.round(t / fr) * fr, flo = t => Math.floor(t / fr + 1e-6) * fr, sec2 = v => snap((+v || 0) * TICKS);
+  const foot = an.footage.filter(c => !isTplClipName(c.name)); if (!foot.length) throw new Error('촬영 영상 클립을 찾지 못했습니다');
+  if (!tpl.sub) log.push('템플릿에서 소제목 자막을 찾지 못해 소제목은 넣지 않았습니다.');
+  if (!tpl.trans) log.push('템플릿에서 트랜지션(이름에 transition이 들어간 영상)을 찾지 못해 트랜지션은 넣지 않았습니다.');
+  for (const t of seq.vtracks) for (const n of M.items(t)) { const c = M.info(n); if ((c.kind !== 'text' && isTransName(c.name)) || (c.kind === 'text' && c.layers.some(L => /소제목/.test(oneLine(L.text))))) { log.push('이 프로젝트에는 이미 소제목이나 트랜지션이 들어 있습니다. 그대로 두고 새로 더했으니 겹치는 것은 지워 주세요.'); break; } }
+  const starts = [...new Set(foot.map(c => c.start))].sort((a, b) => a - b), nearStart = t => { let best = null, d = 3 * TICKS; for (const x of starts) { const dd = Math.abs(x - t); if (dd < d) { d = dd; best = x; } } return best; };
+  const secs = plan.filter(p => p && isFinite(p.t0)).slice().sort((a, b) => a.t0 - b.t0); if (!secs.length) throw new Error('구간이 비어 있습니다');
+  const start0 = nearStart(secs[0].t0) ?? starts[0]; let end0 = Math.max(...foot.map(c => c.end));
+  const B = []; for (let i = 1; i < secs.length; i++) { const S = nearStart(secs[i].t0); if (S == null) { log.push(`${i + 1}번째 구간 시작(${sec(secs[i].t0)}초) 근처에서 컷을 찾지 못해 그 경계는 건너뛰었습니다.`); continue; } if (S <= start0 || B.some(b => b.S === S)) continue; const ends = foot.filter(c => c.end <= S + fr && c.end > S - 3 * TICKS).map(c => c.end); B.push({ i, S, E: ends.length ? Math.max(...ends) : S, mute: !!secs[i].mute }); }
+  const ext = opt.mode === 'extend', pre = ext ? sec2(opt.pre) : 0, post = ext ? sec2(opt.post) : 0, lead = sec2(opt.lead), tracks = seq.vtracks.concat(seq.atracks);
+  const footSet = new Set(foot.map(c => c.id)), voiceSet = new Set(an.voice.map(c => c.id)), isAudio = n => n.tagName === 'AudioClipTrackItem';
+  const footAudio = n => voiceSet.has(n.getAttribute('ObjectID')) || (isAudio(n) && footSet.size && foot.some(f => baseName(f.media) === baseName(M.info(n).media)));
+  let short = 0;
+  for (const b of B.slice().sort((x, y) => y.S - x.S)) { // 뒤 경계부터: 앞 경계의 시간이 안 바뀐다
+    if (!ext) { b.C = b.S; b.d = 0; continue; }
+    const d = Math.max(0, b.E + pre + post - b.S); b.d = d; b.C = b.S + d - post; const prevs = [], nexts = [];
+    for (const t of tracks) for (const n of trackNodes(M, t)) {
+      const it = itemTimes(n); if (!it) continue; const id = n.getAttribute('ObjectID'), canExt = footSet.has(id) || footAudio(n);
+      if (it.s >= b.S - fr / 2) { setItemTimes(M, it, it.s + d, it.e + d); if (canExt && Math.abs(it.s - b.S) < fr) nexts.push(n); }
+      else if (it.e > b.S + fr / 2) { if (d) setItemTimes(M, it, it.s, it.e + d); }
+      else if (canExt && Math.abs(it.e - b.E) < fr) prevs.push(n);
+    }
+    for (const n of prevs) { if (b.mute && isAudio(n)) continue; const it = itemTimes(n), sp = spare(M, n), want = b.C - it.e, got = flo(Math.min(want, sp.tail)); if (got < want - fr) short++; if (got > 0) setRated(M, n, it.s, it.e + got, sp.in, sp.rate); }
+    for (const n of nexts) { if (b.mute && isAudio(n)) continue; const it = itemTimes(n), sp = spare(M, n), want = it.s - b.C, got = flo(Math.min(want, sp.head)); if (got < want - fr) short++; if (got > 0) setRated(M, n, it.s - got, it.e, sp.in - got * sp.rate, sp.rate); }
+  }
+  if (short) log.push(`원본 영상의 여유분이 모자라 ${short}개 클립은 정한 만큼 늘리지 못했습니다. 트랜지션 아래에 빈 화면이 없는지 확인해 주세요.`);
+  let acc = 0; for (const b of B) { b.C += acc; acc += b.d || 0; } end0 += acc; // 앞 경계에서 밀린 만큼 뒤 경계도 밀렸다
+  // 소제목: 본내용 구간에만 (인트로·아웃트로 말하기에는 넣지 않는다)
+  const edges = [start0].concat(B.map(b => b.C)), idxOf = new Map(B.map((b, k) => [b.i, k + 1])), made = [];
+  let num = 0;
+  secs.forEach((p, i) => {
+    if (p.kind !== 'body') return; num++; const k = i === 0 ? 0 : idxOf.get(i); if (k == null) return;
+    const a = edges[k], next = B.find(b => b.i > i), z = next ? next.C : end0; if (z - a < fr * 10) return; made.push({ a, z, num, title: String(p.title || '').trim() });
+  });
+  // 놓을 트랙: 맨 위의 빈 비디오 트랙을 쓰고, 모자라면 만든다 (소제목 아래, 트랜지션 맨 위)
+  const vt = seq.vtracks.slice(); let free = 0; for (let i = vt.length - 1; i >= 0 && !M.items(vt[i]).length; i--) free++;
+  const need = (tpl.sub && made.length ? 1 : 0) + (tpl.trans && B.length ? 1 : 0), top = []; for (let i = vt.length - free; i < vt.length && top.length < need; i++) top.push(vt[i]); while (top.length < need) top.push(addVideoTrack(M, seq.node));
+  let nSub = 0, nTr = 0;
+  if (tpl.sub && made.length) {
+    const S = tpl.sub, list = [];
+    for (const m of made) {
+      const n = M.importClip(Tp, S.clip.node); M.setTimes(n, m.a, m.z, null); const ls = M.layersOf(n), nm = String(m.num).padStart(2, '0');
+      try { if (S.inline) M.setText(ls[S.main], nm + ' ' + (m.title || ' '), { auto: true }); else { if (S.num >= 0 && ls[S.num]) M.setText(ls[S.num], nm); M.setText(ls[S.main], m.title || ' ', { auto: true }); } } catch (e) { log.push(`${nm} 소제목 문구를 넣지 못했습니다: ${e.message}`); }
+      list.push(n); nSub++;
+    }
+    M.addToTrack(top.shift(), list);
+  }
+  if (tpl.trans && B.length) {
+    const tv = tpl.trans, vl = [], aPlan = [];
+    for (const b of B) {
+      const s0 = snap(b.C - lead), n = M.importClip(Tp, tv.v.node); M.setTimes(n, s0, s0 + tv.dur, tv.v.inPoint); vl.push(n); nTr++;
+      for (const x of tv.a) aPlan.push({ clip: x.clip, s: snap(s0 + x.offset), e: snap(s0 + x.offset) + (x.clip.end - x.clip.start) });
+    }
+    M.addToTrack(top.shift(), vl);
+    if (aPlan.length) {
+      const busy = t => trackNodes(M, t).map(itemTimes).filter(Boolean), fits = t => { const z = busy(t); return aPlan.every(p => !z.some(q => p.s < q.e && p.e > q.s)); };
+      const at = seq.atracks.find(t => !trackNodes(M, t).length) || seq.atracks.find(fits);
+      if (at) M.addToTrack(at, aPlan.map(p => { const n = M.importClip(Tp, p.clip.node); M.setTimes(n, p.s, p.e, p.clip.inPoint); return n; }));
+      else log.push('트랜지션 소리를 놓을 빈 오디오 트랙이 없어 소리는 넣지 않았습니다. 빈 오디오 트랙을 하나 만든 뒤 다시 만들어 주세요.');
+    }
+  }
+  return { bounds: B.map(b => ({ at: b.C, ext: b.d || 0, mute: b.mute })), subs: made.map(m => ({ start: m.a, end: m.z, num: m.num, title: m.title })), shift: acc, sub: nSub, trans: nTr, log };
+}
+
+/* ================= 편집기 공통: 차례 안내 줄 =================
+   fn() → { steps: [{ icon, name, done, target: 짚어 줄 요소 id, text: 할 일(HTML) }], done: 다 끝났을 때 문구(HTML) }
+   끝난 단계 ✅, 지금 단계 👉 + 그 요소에 깜빡이는 테두리. 단계를 누르면 그 칸으로 간다. 상태가 바뀌면 저절로 다시 그린다(0.5초마다 확인). */
+const GUIDE_CSS = `.guide{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel,#fff);border:1px solid var(--accent,#1f5fbf);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.gsteps{display:flex;flex-wrap:wrap;gap:6px}
+.gs{cursor:pointer;background:none;font:inherit;font-size:13px;padding:4px 11px;border-radius:999px;border:1px solid var(--line,#ccc);color:var(--mute,#555)}
+.gs.done{color:var(--ok,#1f6b3b);border-color:var(--ok,#1f6b3b);background:none}
+.gs.now{background:var(--accent,#1f5fbf);border-color:var(--accent,#1f5fbf);color:var(--accent-ink,#fff);font-weight:600}
+#guideNext{font-size:14px}#guideNext b{color:var(--accent,#1f5fbf)}.gs.now b{color:inherit}
+.now-target{outline:3px solid var(--accent,#1f5fbf);outline-offset:3px;border-radius:8px;animation:guidePulse 1.6s ease-in-out infinite}
+@keyframes guidePulse{50%{outline-color:transparent}}
+@media (prefers-reduced-motion:reduce){.now-target{animation:none}}`;
+let guideFn = null, guideSig = '';
+function showGuide(fn) {
+  const d = document; guideFn = fn;
+  if (!d.getElementById('guideCss')) { const s = d.createElement('style'); s.id = 'guideCss'; s.textContent = GUIDE_CSS; (d.head || d.body).appendChild(s); }
+  if (!d.getElementById('guideSteps')) { const g = d.createElement('div'); g.className = 'guide'; g.innerHTML = '<div class="gsteps" id="guideSteps"></div><div id="guideNext"></div>'; const w = d.querySelector('.wrap') || d.body, h = w.querySelector('header'); if (h) h.after(g); else w.prepend(g); }
+  drawGuide(); if (!showGuide.timer) showGuide.timer = setInterval(drawGuide, 500);
+}
+function drawGuide() {
+  if (!guideFn) return; let r; try { r = guideFn(); } catch (e) { return; }
+  const steps = r.steps.map(s => Array.isArray(s) ? { icon: s[0], name: s[1], done: !!s[2], target: s[3], text: s[4] } : s), // [아이콘, 이름, 끝났나, 짚을 id, 할 일]
+ cur = steps.findIndex(s => !s.done), sig = JSON.stringify([steps.map(s => [s.done, s.target, s.text]), cur, r.done]); if (sig === guideSig) return; guideSig = sig;
+  const d = document, box = d.getElementById('guideSteps'), next = d.getElementById('guideNext'); box.textContent = '';
+  steps.forEach((s, i) => {
+    const b = d.createElement('button'); b.type = 'button'; b.className = 'gs ' + (s.done ? 'done' : i === cur ? 'now' : ''); b.textContent = `${s.done ? '✅' : i === cur ? '👉' : s.icon} ${i + 1}. ${s.name}`;
+    b.setAttribute('aria-label', `${i + 1}단계 ${s.name}${s.done ? ' 완료' : i === cur ? ' 지금 할 차례' : ''}`); b.onclick = () => { const t = d.getElementById(s.target); if (t) t.scrollIntoView({ block: 'center', behavior: 'smooth' }); }; box.append(b);
+  });
+  d.querySelectorAll('.now-target').forEach(e => e.classList.remove('now-target'));
+  if (cur < 0) { next.innerHTML = '🎉 <b>다 됐습니다!</b> ' + (r.done || ''); return; }
+  const s = steps[cur]; next.innerHTML = `${s.icon} <b>${cur + 1}단계 · ${s.name}</b> — ${s.text}`;
+  const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
+}
+
+const Engine = { TICKS, showGuide, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
@@ -1200,8 +1355,19 @@ const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || 'nul
 const clientKey = () => 'shorts-profile:' + (st.S ? st.S.name.replace(/\.prproj$/i, '').replace(/[\d_\-\s]+/g, ' ').trim().split(' ').slice(0, 2).join(' ') : '');
 
 /* ---------- Claude 연결 (있으면 쓰고, 없으면 복사·붙여넣기) ---------- */
+/* ---------- 진행 안내 (차례대로 하도록) ---------- */
+function guideSteps() {
+  const manual = !$('manual').hidden, chosen = st.cands.filter(c => c.sel), ready = chosen.filter(c => c.detail), built = /만들었/.test($('buildState').textContent);
+  return { steps: [
+    ['📂', '미드폼 넣기', !!st.M, 'dropM', '완성된 가로 영상 프로젝트를 1번 <b>왼쪽 칸</b>에 끌어다 놓으세요.'],
+    ['🎨', '쇼츠 디자인 넣기', !!st.S, 'dropS', '자막·효과음 견본이 든 세로 쇼츠 디자인 프로젝트를 1번 <b>오른쪽 칸</b>에 끌어다 놓으세요.'],
+    ['🤖', '후보 받기', st.cands.length > 0, manual ? 'manualIn' : 'btnFind', manual ? '<b>요청문 복사</b> → ChatGPT 새 대화에 붙여넣기 → 받은 답 전체를 아래 칸에 붙이고 <b>답 적용</b>을 누르세요.' : '2번에서 읽은 값을 확인하고, 3번의 <b>' + $('btnFind').textContent + '</b>를 누르세요.'],
+    ['✅', '구간 고르기', ready.length > 0, 'cands', chosen.length ? '체크한 구간의 문구(제목·강조 자막)가 아직 없습니다. 후보에서 문구 받기를 하세요.' : '쇼츠로 만들 후보를 체크하세요.'],
+    ['💾', '쇼츠 만들기', built, 'btnBuild', '문구를 확인하고 <b>고른 구간으로 쇼츠 만들기</b>를 누르세요.'],
+  ], done: '받은 파일을 프리미어에서 열어 새 쇼츠를 확인하세요.' };
+}
 (async () => {
-  await 0; setupModes(); // 스크립트가 끝까지 읽힌 뒤에 방식 목록을 채운다
+  await 0; setupModes(); E.showGuide(guideSteps); // 스크립트가 끝까지 읽힌 뒤에 방식 목록을 채운다
   try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = (p, onText) => s.json(p, { modelTier: 'default', cache: false, onText }); st.save = await window.claude.use('downloads'); } } catch {}
   setupModes();
 })();

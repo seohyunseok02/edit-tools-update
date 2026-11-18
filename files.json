@@ -1,38 +1,43 @@
 [
  {
   "path": "hub.html",
-  "size": 5367,
-  "sha256": "ce111eaaf080dd2958f685771eb7fd28ad893179532c91fd1bfc19b267365220"
+  "size": 5394,
+  "sha256": "ba5c25136c9816b861626b2170ead617cd480e40857e4ecd80cd43e9c31c8895"
  },
  {
   "path": "pages/extract.html",
-  "size": 122569,
-  "sha256": "882bc99da5b084291ca4204d1776eff526d17f9e3d868e8e11b80a8fc4cb9e9f"
+  "size": 138972,
+  "sha256": "704e6dddeae7277187c2845b57a50138d298cd2724a91ba564bb721b18fcb472"
  },
  {
   "path": "pages/fx.html",
-  "size": 156917,
-  "sha256": "62b340ff90de88d08ae948c0a386d4078c202b2ba12e741a8a3ec7c5825ad806"
+  "size": 173398,
+  "sha256": "71a0f93aad38c17de23a2a1e46013b89855d675093f4176f28c9d6b1e1e9c258"
  },
  {
   "path": "pages/highlight.html",
-  "size": 127413,
-  "sha256": "7a8eeee5ccf33e65eb114c8fe1ff8234d8096f64c1f2628f20678a57cca912cb"
+  "size": 143785,
+  "sha256": "d7a3b5b951eb92af909da0126895a0a059a333293a2d016bdd16711a3d8693be"
  },
  {
   "path": "pages/shorts.html",
-  "size": 157499,
-  "sha256": "88324e5a033dff123eb6c913cf853bc459f82142a85d1926706677e332dbecc4"
+  "size": 175430,
+  "sha256": "10ab7fe7f7a2df6db0a939e6a8a216c33ec6e1dc056aaa4cb5b9200c431ea21f"
  },
  {
   "path": "pages/spell.html",
-  "size": 127619,
-  "sha256": "1620919701b88801d4afce7ac0d46c2da7a3ea6bc0e4a560fde1f892b22c6c2b"
+  "size": 145344,
+  "sha256": "14e23701e3733c924ebe73e0035c13834502c297e298830d70524a248554f988"
+ },
+ {
+  "path": "pages/subtitle.html",
+  "size": 149022,
+  "sha256": "81a511be035d15fa07060f1690f7775ba325e447908124ff8f982ba2a162bea7"
  },
  {
   "path": "pages/thumb.html",
-  "size": 123957,
-  "sha256": "11ce5c964a140137b972385520ab009fb0fb74b1a7d0707a45aa7da0374606db"
+  "size": 141231,
+  "sha256": "500961788d03cc21ef6201a6263c02ef32b4b2c9d8062a7c3c92722b90b091ca"
  },
  {
   "path": "thumb/jpg.epr",
@@ -66,7 +71,7 @@
  },
  {
   "path": "version.json",
-  "size": 145,
-  "sha256": "4178d6c5ac6c97bd7fbdaf4e9d7d9d72c8949e4e0bbef79cd7e8f5b08615991f"
+  "size": 146,
+  "sha256": "50674497272afc508e115b45e87ae15337f6042ff56018617226268a038e02d7"
  }
 ]

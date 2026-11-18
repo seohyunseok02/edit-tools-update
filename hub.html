@@ -33,7 +33,7 @@ iframe[hidden]{display:none}
 <main id="main"></main>
 <script>
 'use strict';
-const TOOLS = [['fx', '효과자막'], ['spell', '맞춤법 검사'], ['highlight', '하이라이트'], ['shorts', '쇼츠'], ['extract', '추출쇼츠'], ['thumb', '썸네일 캡쳐']];
+const TOOLS = [['fx', '효과자막'], ['spell', '맞춤법 검사'], ['highlight', '하이라이트'], ['shorts', '쇼츠'], ['extract', '추출쇼츠'], ['subtitle', '소제목'], ['thumb', '썸네일 캡쳐']];
 const nav = document.querySelector('nav'), main = document.getElementById('main'), frames = {};
 function open(id) {
   for (const [k] of TOOLS) { document.getElementById('tab-' + k).setAttribute('aria-selected', String(k === id)); if (frames[k]) frames[k].hidden = k !== id; }
