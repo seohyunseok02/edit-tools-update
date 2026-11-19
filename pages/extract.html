@@ -551,11 +551,12 @@ function analyzeMid(M) {
   // 말자막 트랙 = 글자 클립이 가장 많은 트랙
   let capTrack = -1, capN = 0; V.forEach((cl, i) => { const n = cl.filter(c => c.kind === 'text').length; if (n > capN) { capN = n; capTrack = i; } });
   const nameCount = new Map(); for (const c of all) if (c.kind === 'image') nameCount.set(c.name, (nameCount.get(c.name) || 0) + 1);
-  const camTracks = []; V.forEach((cl, i) => { if (cl.length && cl.filter(c => c.kind === 'video' && !/transition/i.test(c.name)).length >= cl.length * 0.6 && cl.length >= 5) camTracks.push(i); });
+  const camTracks = []; V.forEach((cl, i) => { if (cl.length && cl.filter(c => (c.kind === 'video' || c.kind === 'seq') && !/transition/i.test(c.name)).length >= cl.length * 0.6 && cl.length >= 5) camTracks.push(i); });
+  { const top = Math.max(0, ...camTracks.map(i => V[i].length)); for (let k = camTracks.length - 1; k >= 0; k--) if (V[camTracks[k]].length < top * 0.2) camTracks.splice(k, 1); } // 인서트 영상 몇 개만 있는 트랙은 카메라가 아니다
   const captions = [], fx = [], inserts = [], footage = [];
   for (const c of all) {
     const dur = c.end - c.start;
-    if (camTracks.includes(c.track) && c.kind === 'video') { c.role = 'footage'; footage.push(c); }
+    if (camTracks.includes(c.track) && (c.kind === 'video' || c.kind === 'seq')) { c.role = 'footage'; footage.push(c); }
     else if (c.track === capTrack && c.kind === 'text') { c.role = 'caption'; captions.push(c); }
     else if (dur > 60 * TICKS || dur > seqEnd * 0.25) c.role = 'persistent';
     else if (c.kind === 'image' && nameCount.get(c.name) > 20) c.role = 'decor';
@@ -1235,26 +1236,29 @@ const isTplClipName = n => /^@|ending|intro|preview|trans/i.test(n);
 function analyzeChapterTpl(Tp) {
   let seq = null, bn = -1; for (const s of Tp.seqs()) { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; if (n > bn) { bn = n; seq = s; } }
   if (!seq) throw new Error('템플릿에서 시퀀스를 찾지 못했습니다');
-  let sub = null, tv = null; const ta = [];
+  let sub = null, tv = null, tEnd = 0; const ta = [], tp = [];
   for (const t of seq.vtracks) for (const node of Tp.items(t)) {
     const c = Tp.info(node);
     if (!sub && c.kind === 'text' && c.layers.some(L => /소제목/.test(oneLine(L.text)))) sub = c;
-    if (!tv && c.kind !== 'text' && isTransName(c.name)) tv = c;
+    if (!tv && c.kind !== 'text' && isTransName(c.name)) { tv = c; tEnd = c.end; tp.push({ clip: c, offset: 0 }); }
+    else if (tv && c.kind !== 'text' && isTransName(c.name) && c.start >= tEnd - TICKS / 50 && c.start <= tEnd + TICKS / 20 && Tp.items(t).includes(tv.node)) { tp.push({ clip: c, offset: c.start - tv.start }); tEnd = c.end; } // 한 트랜지션을 여러 조각으로 잘라 둔 템플릿: 이어진 조각을 모두 쓴다
   }
-  if (tv) for (const t of seq.atracks) for (const node of Tp.items(t)) { const c = Tp.info(node); if (c.name === tv.name && c.start >= tv.start - TICKS && c.start < tv.end) ta.push({ clip: c, offset: c.start - tv.start }); }
+  if (tv) for (const t of seq.atracks) for (const node of Tp.items(t)) { const c = Tp.info(node); if (isTransName(c.name) && c.start >= tv.start - TICKS && c.start < tEnd) ta.push({ clip: c, offset: c.start - tv.start }); }
   let slots = null;
   if (sub) {
     const ls = sub.layers.map(L => oneLine(L.text)), num = ls.findIndex((t, i) => /^\d{1,2}$/.test(t) && sub.layers[i].param); let main = -1, best = 0;
     ls.forEach((t, i) => { if (i === num || !sub.layers[i].param || t.replace(/\s/g, '') === '소제목') return; if (t.length > best) { best = t.length; main = i; } });
-    if (main >= 0) slots = { num, main, inline: num < 0 && /^\d{1,2}\s/.test(ls[main]), sample: ls[main] };
+    const m = main >= 0 && num < 0 ? /^\d{1,2}(\s*[-–—.|:·]?\s*)/.exec(ls[main]) : null; // "01 - 소제목" → 번호 뒤 구분 " - " 를 그대로 쓴다
+    if (main >= 0) slots = { num, main, inline: !!m && /\s|[-–—.|:·]/.test(m[1]), sep: m ? m[1] : ' ', sample: ls[main] };
   }
-  return { seq, sub: slots ? Object.assign({ clip: sub }, slots) : null, trans: tv ? { v: tv, a: ta, dur: tv.end - tv.start } : null };
+  return { seq, sub: slots ? Object.assign({ clip: sub }, slots) : null, trans: tv ? { v: tv, parts: tp, a: ta, dur: tEnd - tv.start } : null };
 }
 /* 완성된 본편에서 그 업체의 트랜지션 방식을 잰다 (초). lead: 컷보다 몇 초 앞에서 트랜지션이 시작하나, pre/post: 컷 앞뒤로 말 없이 늘린 길이 */
 function readTransStyle(P) {
   const an = analyzeMid(P), fr = an.seq.frame, foot = an.footage.filter(c => !isTplClipName(c.name)), med = a => { if (!a.length) return 0; a = a.slice().sort((x, y) => x - y); return a[a.length >> 1]; };
   const camNames = new Set(foot.map(c => baseName(c.media))), mic = an.voice.filter(c => !camNames.has(baseName(c.media))), voice = mic.length ? mic : an.voice; // 따로 녹음한 목소리가 있으면 그것으로 잰다
-  const tr = []; for (const t of an.seq.vtracks) for (const n of P.items(t)) { const c = P.info(n); if (c.kind !== 'text' && isTransName(c.name)) tr.push(c); }
+  const tr = []; for (const t of an.seq.vtracks) { const own = P.items(t).map(n => P.info(n)).filter(c => c.kind !== 'text' && isTransName(c.name)).sort((a, b) => a.start - b.start);
+    for (const c of own) { const last = tr[tr.length - 1]; if (last && last.track === t && c.start <= last.end + fr) last.end = Math.max(last.end, c.end); else tr.push({ track: t, start: c.start, end: c.end }); } } // 한 트랜지션을 여러 조각으로 잘라 둔 경우 이어 붙여 하나로 본다
   const lead = [], pre = [], post = [];
   for (const x of tr) {
     const ends = foot.filter(c => c.end > x.start && c.end <= x.end).map(c => c.end); if (!ends.length) continue; const E0 = Math.max(...ends);
@@ -1327,7 +1331,7 @@ function buildChapters(M, Tp, an, tpl, plan, opt) {
     const S = tpl.sub, list = [];
     for (const m of made) {
       const n = M.importClip(Tp, S.clip.node); M.setTimes(n, m.a, m.z, null); const ls = M.layersOf(n), nm = String(m.num).padStart(2, '0');
-      try { if (S.inline) M.setText(ls[S.main], nm + ' ' + (m.title || ' '), { auto: true }); else { if (S.num >= 0 && ls[S.num]) M.setText(ls[S.num], nm); M.setText(ls[S.main], m.title || ' ', { auto: true }); } } catch (e) { log.push(`${nm} 소제목 문구를 넣지 못했습니다: ${e.message}`); }
+      try { if (S.inline) M.setText(ls[S.main], nm + (S.sep || ' ') + (m.title || ' '), { auto: true }); else { if (S.num >= 0 && ls[S.num]) M.setText(ls[S.num], nm); M.setText(ls[S.main], m.title || ' ', { auto: true }); } } catch (e) { log.push(`${nm} 소제목 문구를 넣지 못했습니다: ${e.message}`); }
       list.push(n); nSub++;
     }
     M.addToTrack(top.shift(), list);
@@ -1335,7 +1339,7 @@ function buildChapters(M, Tp, an, tpl, plan, opt) {
   if (tpl.trans && B.length) {
     const tv = tpl.trans, vl = [], aPlan = [];
     for (const b of B) {
-      const s0 = snap(b.C - lead), n = M.importClip(Tp, tv.v.node); M.setTimes(n, s0, s0 + tv.dur, tv.v.inPoint); vl.push(n); nTr++;
+      const s0 = snap(b.C - lead); for (const p of tv.parts || [{ clip: tv.v, offset: 0 }]) { const n = M.importClip(Tp, p.clip.node); M.setTimes(n, snap(s0 + p.offset), snap(s0 + p.offset) + (p.clip.end - p.clip.start), p.clip.inPoint); vl.push(n); } nTr++;
       for (const x of tv.a) aPlan.push({ clip: x.clip, s: snap(s0 + x.offset), e: snap(s0 + x.offset) + (x.clip.end - x.clip.start) });
     }
     M.addToTrack(top.shift(), vl);
