@@ -932,8 +932,21 @@ function analyzeTemplateSeq(Tp, seq) {
         const h = ls[mi].replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(), extra = String(c.layers[mi].text || '').split(/[\r\n]+/).map(oneLine).filter(t => t && !/들어가는|담을 수|들어갑니다/.test(t)); // "내용이 많이 들어가는\r질문 전용" → "질문 전용"
         name = !/들어가는|담을 수|들어갑니다/.test(h) ? h : extra.length ? extra.join(' ').replace(/\s*자막.*$/, '').trim() : '';
       }
-    } else if (c.layers.length === 1 && /(포인트|멘트) 자막입니다/.test(ls[0])) { name = ls[0].replace(/[“”"]/g, '').replace(/\s*자막입니다.*/, '').trim(); slots = { main: 0 }; }
-    else if (c.layers.length === 1 && /들어가는|담을 수/.test(ls[0]) && c.layers[0].param && texts.some(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS)) { name = ''; slots = { main: 0 }; } // 첨자 없는 두 줄형 윗줄("내용이 많이 들어가는"): 이름은 둘째 줄에서
+    } else if ((() => {
+      // 견본 문구 한 줄짜리 디자인: "행복~ 기쁨! 자막입니다", "분노! 화남! 포인트 자막 입니다", "2줄 진행 포인트 자막" 등. ✦·X·Q. 같은 꾸밈 글자 레이어는 세지 않고, "Question" 같은 짧은 라벨이 있으면 그것을 이름으로 쓴다.
+      // "내용이 많이 들어가는"처럼 이름을 지을 수 없는 문구는 둘째 줄 클립이 있을 때만(두 줄형 윗줄) 받는다. 이름은 둘째 줄에서 짓는다.
+      const sig = ls.map((t, i) => i).filter(i => ls[i] && !c.layers[i].off && c.layers[i].param && ls[i].replace(/[^가-힣A-Za-z0-9]/g, '').length >= 2);
+      const ph = sig.filter(i => /자막\s*입니?다?|자막$|들어가는|담을 수/.test(ls[i]));
+      if (ph.length !== 1 || sig.length > 2 || ls.some(t => /말자막|입력해 주세요|사진|출처|제목|게스트|이름표|넘버링|목록|[①-⑩]/.test(t))) return false;
+      const lab = sig.find(i => i !== ph[0] && [...ls[i]].length <= 10 && !isPlaceholder(ls[i]));
+      if (sig.length === 2 && lab == null) return false;
+      let nm = ls[ph[0]].replace(/[“”"]/g, '').replace(/\s*자막\s*입니?다?.*$/, '').replace(/\s*자막$/, '').trim();
+      if (!nm || /들어가는|담을 수|들어갑니다/.test(nm)) nm = lab != null ? ls[lab].replace(/[.|]+$/, '') : '';
+      if (!nm && !texts.some(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS)) return false;
+      const off = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t) && !/들어갑니다|들어가는|담을 수/.test(t)); // 꺼 둔 이름표가 있으면 그 이름이 우선
+      if (off >= 0) { nm = ls[off]; nameLayer = off; }
+      name = nm; slots = { main: ph[0] }; return true;
+    })()) { /* 위에서 name, slots 를 정했다 */ }
     else {
       // 견본 자리에 실제 문구를 채워 둔 템플릿(예: 서울그린치과 "심플 1", "일반 1"): 꺼 둔 이름 레이어 + 보이는 글자 1~2줄. 두 줄이면 짧은 쪽이 첨자, 긴 쪽이 본문.
       const ni = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t)), vis = ls.map((t, i) => i).filter(i => i !== ni && ls[i] && !c.layers[i].off && c.layers[i].param);
@@ -1039,8 +1052,12 @@ function buildFx(M, Tp, an, cat, items, opt) {
     for (const i of cand) { if (i <= above) continue; if (!occ[i].some(z => a < z[1] && b > z[0])) { occ[i].push([a, b]); adds[i].push(node); usedTracks.add(i); return i; } }
     tracks.push(addVideoTrack(M, seq.node)); occ.push([[a, b]]); adds.push([node]); cand.push(tracks.length - 1); usedTracks.add(tracks.length - 1); return tracks.length - 1;
   };
-  const aTracks = seq.atracks.map(t => ({ t, items: M.items(t).map(n => M.info(n)) })), freeA = aTracks.filter(x => !x.items.length), sTrack = freeA[0] || null, sTrack2 = freeA[1] || null, addS = [], addS2 = [], sfxPlan = [];
-  if (!sTrack) log.push('비어 있는 오디오 트랙이 없어 효과음을 넣지 못했습니다. 빈 오디오 트랙을 하나 추가한 뒤 다시 만들어 주세요.');
+  const aTracks = seq.atracks.map((t, i) => ({ t, i, items: M.items(t).map(n => M.info(n)) })), freeA = aTracks.filter(x => !x.items.length), addS = [], addS2 = [], sfxPlan = [];
+  // 빈 오디오 트랙이 없으면: 짧은 소리만 있는 트랙(이미 효과음을 넣던 트랙. 목소리·배경음악 트랙은 빼고)의 빈 자리에 넣는다
+  const voiceIds = new Set(an.voice.map(c => c.id)), shortTracks = freeA.length ? [] : aTracks.filter(x => x.items.every(c => c.end - c.start < 20 * TICKS && !voiceIds.has(c.id))).map(x => Object.assign(x, { busy: x.items.map(c => [c.start, c.end]), add: [] }));
+  const sTrack = freeA[0] || null, sTrack2 = freeA[1] || null; let blocked = 0;
+  if (!sTrack && !shortTracks.length) log.push('효과음을 놓을 오디오 트랙이 없어 효과음을 넣지 못했습니다 (모든 오디오 트랙에 목소리나 배경음악이 있음). 빈 오디오 트랙을 하나 추가한 뒤 다시 만들어 주세요.');
+  else if (!sTrack) log.push(`빈 오디오 트랙이 없어 효과음은 짧은 소리만 있던 트랙(${shortTracks.map(x => 'A' + (x.i + 1)).join(', ')})의 빈 자리에 넣었습니다.`);
   const list = items.map(x => ({ ...x, t0: snap(toCut(x.t0)), t1: snap(toCut(x.t1)) })).filter(x => x.t1 - x.t0 >= fr * 5).sort((a, b) => a.t0 - b.t0);
   for (let i = 0; i + 1 < list.length; i++) if (list[i].t1 > list[i + 1].t0) list[i].t1 = list[i + 1].t0;
   const bump = opt.bump == null ? 10 : +opt.bump, bumped = new Set(); let n = 0, muted = 0;
@@ -1067,7 +1084,7 @@ function buildFx(M, Tp, an, cat, items, opt) {
       }
       const ti = place(c, start, it.t1, k === 0 ? -1 : baseTrack); if (k === 0) baseTrack = ti;
     });
-    if (sTrack && it.sfx !== false) {
+    if ((sTrack || shortTracks.length) && it.sfx !== false) {
       const fo = d.two ? d.clips[1].offset : Infinity;
       for (const s of d.sfx) { const late = s.offset >= fo - 0.1 * TICKS; if (late && !useTwo) continue; const st = late ? snap(folStart + (s.offset - fo)) : snap(it.t0 + s.offset); if (st < it.t1) sfxPlan.push({ s, st, en: st + (s.clip.end - s.clip.start) }); }
     }
@@ -1079,12 +1096,15 @@ function buildFx(M, Tp, an, cat, items, opt) {
   sfxPlan.sort((a, b) => a.st - b.st); let endA = 0, endB = 0, lastA = null;
   for (const p of sfxPlan) {
     const mk = () => { const a = M.importClip(Tp, p.s.clip.node); M.setTimes(a, p.st, p.en, p.s.clip.inPoint); return a; };
+    if (!sTrack) { const tk = shortTracks.find(x => !x.busy.some(z => p.st < z[1] && p.en > z[0])); if (!tk) { blocked++; continue; } tk.add.push(mk()); tk.busy.push([p.st, p.en]); continue; } // 빈 트랙이 없을 때: 겹치지 않는 효과음 트랙에
     if (p.st >= endA) { lastA = { node: mk(), st: p.st }; addS.push(lastA.node); endA = p.en; }
     else if (sTrack2 && p.st >= endB) { addS2.push(mk()); endB = p.en; }
     else if (lastA && p.st - lastA.st >= fr * 2) { M.setTimes(lastA.node, lastA.st, p.st, null); lastA = { node: mk(), st: p.st }; addS.push(lastA.node); endA = p.en; }
   }
+  if (blocked) log.push(`효과음 ${blocked}개는 그 자리에 이미 다른 소리가 있어 넣지 않았습니다.`);
+  for (const x of shortTracks) M.addToTrack(x.t, x.add);
   adds.forEach((arr, i) => M.addToTrack(tracks[i], arr)); if (sTrack) M.addToTrack(sTrack.t, addS); if (sTrack2) M.addToTrack(sTrack2.t, addS2);
-  return { count: n, muted, sfx: addS.length + addS2.length, tracks: [...usedTracks].sort((a, b) => a - b).map(i => i + 1), bumped: bumped.size, log };
+  return { count: n, muted, sfx: addS.length + addS2.length + shortTracks.reduce((a, x) => a + x.add.length, 0), tracks: [...usedTracks].sort((a, b) => a - b).map(i => i + 1), bumped: bumped.size, log };
 }
 /* 숫자 파라미터(크기 등)에 값을 더한다. 키프레임이 있으면 모두에 더한다. */
 function addToParam(p, delta) {
