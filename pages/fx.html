@@ -57,7 +57,7 @@ textarea{width:100%;min-height:110px;font:12px/1.5 var(--mono)}
 .item.offx{opacity:.5}
 .item .t{font:12px var(--mono);color:var(--mute)}
 .item .said{font-size:13px;color:var(--mute);min-width:0}
-.item .fields{display:grid;grid-template-columns:minmax(150px,1.1fr) 1fr 1.6fr 1.6fr auto;gap:6px;min-width:0}
+.item .fields{display:grid;grid-template-columns:minmax(150px,1.1fr) auto 1fr 1.6fr 1.6fr auto;gap:6px;min-width:0}
 .item .fields input,.item .fields select{width:100%}
 @media (max-width:760px){.item{grid-template-columns:1fr}.item .fields{grid-template-columns:1fr}}
 .guide{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border:1px solid var(--accent);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
@@ -74,6 +74,20 @@ textarea{width:100%;min-height:110px;font:12px/1.5 var(--mono)}
 #manualOut{min-height:160px;margin-top:8px}
 #log{font:12px/1.6 var(--mono);color:var(--mute);white-space:pre-wrap;margin:0}
 details summary{cursor:pointer;color:var(--mute);font-size:13px}
+/* 디자인 미리보기 사진 */
+.chip.pic{display:inline-flex;flex-direction:column;align-items:center;gap:3px;padding:4px}
+.chip.pic img{width:120px;height:auto;border-radius:3px;display:block}
+.chip:not(.on) img{opacity:.45}
+.pvpick{padding:2px;min-height:34px;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.pvpick img{height:44px;width:auto;border-radius:3px;display:block}
+.pvback{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.pvbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;max-width:960px;width:100%;max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.pvbox h4{margin:6px 0 0;font-size:13px;color:var(--mute)}
+.pvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.pvcell{display:flex;flex-direction:column;gap:4px;padding:6px;text-align:left;font-size:12px}
+.pvcell img{width:100%;height:auto;border-radius:4px;display:block}
+.pvcell.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.pvnone{aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--mute);border-radius:4px}
 </style>
 
 <div class="wrap">
@@ -907,9 +921,15 @@ function setBypass(P, comp, on) {
 }
 /* 템플릿 프로젝트에서 효과자막 디자인 목록을 읽는다.
    디자인 = 이름 레이어(예: "일반4", "상황 - 감성") + 첨자 줄 + 본문 줄. 두 줄짜리는 1초 뒤에 뜨는 둘째 클립이 붙는다. */
+/* 템플릿 안의 시퀀스 가운데 디자인 견본이 든 것을 찾는다: 이름이 tem·템플릿인 것 먼저, 그다음 글자 클립이 많은 순서. (템플릿 파일에 작업한 본편 시퀀스가 같이 들어 있는 경우가 있다) */
 function analyzeTemplate(Tp) {
-  let seq = null, bn = -1; for (const s of Tp.seqs()) { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; if (n > bn) { bn = n; seq = s; } }
-  if (!seq || bn < 1) throw new Error('템플릿 프로젝트에서 자막이 들어 있는 시퀀스를 찾지 못했습니다');
+  const cnt = s => { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; return n; };
+  const list = Tp.seqs().map(s => ({ s, n: cnt(s), tem: /^tem|템플릿|template/i.test(s.name) })).filter(x => x.n > 0).sort((a, b) => (b.tem - a.tem) || (b.n - a.n));
+  if (!list.length) throw new Error('템플릿 프로젝트에서 자막이 들어 있는 시퀀스를 찾지 못했습니다');
+  let err = null; for (const x of list) { try { return analyzeTemplateSeq(Tp, x.s); } catch (e) { err = err || e; } }
+  throw err;
+}
+function analyzeTemplateSeq(Tp, seq) {
   const V = seq.vtracks.map((t, i) => Tp.items(t).map(n => Object.assign(Tp.info(n), { track: i }))).flat();
   const A = seq.atracks.map((t, i) => Tp.items(t).map(n => Object.assign(Tp.info(n), { track: i }))).flat().filter(c => c.end - c.start < 20 * TICKS && !/intro|transition|ending|preview/i.test(c.name));
   const texts = V.filter(c => c.kind === 'text').sort((a, b) => a.start - b.start || a.track - b.track), used = new Set(), designs = [];
@@ -923,13 +943,32 @@ function analyzeTemplate(Tp) {
       const mi = ls.findIndex((t, i) => i !== si && i !== ni && isPlaceholder(t));
       if (ni < 0 || mi < 0) continue; name = ls[ni]; nameLayer = ni; slots = { small: si, main: mi };
     } else if (c.layers.length === 1 && /(포인트|멘트) 자막입니다/.test(ls[0])) { name = ls[0].replace(/[“”"]/g, '').replace(/\s*자막입니다.*/, '').trim(); slots = { main: 0 }; }
-    else continue;
+    else {
+      // 견본 자리에 실제 문구를 채워 둔 템플릿(예: 서울그린치과 "심플 1", "일반 1"): 꺼 둔 이름 레이어 + 보이는 글자 1~2줄. 두 줄이면 짧은 쪽이 첨자, 긴 쪽이 본문.
+      const ni = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t)), vis = ls.map((t, i) => i).filter(i => i !== ni && ls[i] && !c.layers[i].off && c.layers[i].param);
+      if (ni < 0 || !vis.length || vis.length > 2 || c.end - c.start > 8 * TICKS || /들어갑니다|들어가는|담을 수/.test(ls[ni]) || /말풍선|상대방|말자막|게스트|이름|직업|CTA|엔딩|카카오|채널|밑줄|넘버링|사진|출처|소제목|요청|제목|로고|logo|가이드|guide|메모|참고/i.test(ls[ni])) continue;
+      const mi = vis.length === 2 && [...ls[vis[0]]].length > [...ls[vis[1]]].length ? vis[0] : vis[vis.length - 1];
+      name = ls[ni]; nameLayer = ni; slots = { main: mi }; if (vis.length === 2) slots.small = vis.find(i => i !== mi);
+    }
     used.add(c.id);
     const d = { name, base: name, nameLayer, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[slots.main].font };
     const fol = texts.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS && x.layers.some(L => isPlaceholder(oneLine(L.text))));
     if (fol) { const fm = fol.layers.findIndex(L => isPlaceholder(oneLine(L.text))); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
     d.sfx = A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name }));
     designs.push(d);
+  }
+  // 이름표가 없어 못 알아본 한 줄 자막: 템플릿에서 한 줄 자막은 두 줄 자막보다 앞에 놓인다. 디자인이 놓인 트랙에서 첫 두 줄 디자인보다 앞에 있는 짧은 글자 클립을 한 줄 디자인으로 본다.
+  const twoStart = Math.min(...designs.filter(d => d.two).map(d => d.clips[0].clip.start)), dTracks = new Set(designs.map(d => d.clips[0].clip.track));
+  const junk = /느낌|스타일|이런 |예시|하기에|사용법|참고|말자막|게스트|홍길동|목록|BOX|박스|하이라이트|PIP|Chapter|챕터|타이틀|말풍선|설명|가이드|on\/off|그라데이션|CTA|엔딩|카카오|채널|밑줄|넘버링|사진|출처|소제목|요청|제목|로고|logo|본편/i;
+  let guess = 0;
+  if (isFinite(twoStart)) for (const c of texts) {
+    if (used.has(c.id) || c.start >= twoStart || !dTracks.has(c.track) || c.end - c.start > 8 * TICKS) continue;
+    if (texts.some(x => x !== c && x.track !== c.track && x.end - x.start <= 10 * TICKS && Math.min(x.end, c.end) - Math.max(x.start, c.start) > (c.end - c.start) * 0.5)) continue; // 다른 트랙 글자와 겹쳐 뜨면 여러 클립짜리 그래픽(이름표, 두 줄형 윗줄 등)의 일부다
+    const ls = c.layers.map(L => oneLine(L.text)), vis = ls.map((t, i) => i).filter(i => ls[i] && !c.layers[i].off && c.layers[i].param); if (!vis.length || vis.length > 2 || ls.some(t => junk.test(t))) continue;
+    const ni = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t)), mi = vis.length === 2 && [...ls[vis[0]]].length > [...ls[vis[1]]].length ? vis[0] : vis[vis.length - 1];
+    const slots = { main: mi }; if (vis.length === 2) slots.small = vis.find(i => i !== mi);
+    const hint = ls[mi].replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(), name = ni >= 0 ? ls[ni] : hint && [...hint].length <= 14 ? hint : '한 줄 ' + (++guess); used.add(c.id); // 이름이 없으면 견본 문구(예: "어필포인트 자막입니다" → "어필포인트")를 이름으로
+    designs.push({ name, base: name, nameLayer: ni, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[mi].font, guessed: true, sfx: A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name })) });
   }
   const count = {}; for (const d of designs) count[d.name] = (count[d.name] || 0) + 1;
   const seen = {}; for (const d of designs) if (count[d.name] > 1) { seen[d.name] = (seen[d.name] || 0) + 1; d.name = d.name + ' ' + seen[d.name]; }
@@ -1385,7 +1424,7 @@ function fillClients() {
 async function pickClient(name) {
   st.cur = name; store.set('fx-last', name); st.tp = null; st.cat = null; const c = st.clients[name]; show('err1', '');
   if (c && c.tplBytes) { try { st.tp = await E.Proj.fromBytes(c.tplBytes, c.tplName); st.cat = E.analyzeTemplate(st.tp); } catch (er) { show('err1', '보관된 템플릿을 읽지 못했습니다: ' + er.message); } }
-  renderClient(); ready(); loadLearned();
+  renderClient(); ready(); loadLearned(); loadSharedPV();
 }
 /* ---------- 다른 업체 스타일 빌려오기 ----------
    새 업체처럼 자기 완성본이 없을 때, 분위기가 비슷한 업체의 스타일을 출발점으로 쓴다.
@@ -1426,6 +1465,58 @@ const OFF_BY_DEFAULT = /공중|목록|넘버링|CTA|사진|깨알/;
 function isOn(c, d) { const o = (c && c.off) || {}; return o[d.name] == null ? !OFF_BY_DEFAULT.test(d.name) : !o[d.name]; }
 function onDesigns() { const c = st.clients[st.cur], a = st.cat.designs.filter(d => isOn(c, d)); return a.length ? a : st.cat.designs; }
 const segHint = d => { const cl = d.clips[0], p = cl.clip.layers[cl.slots.main].parts; return p.length > 1 ? p.map(x => x.trim()).join(' | ') : ''; };
+
+/* ---------- 디자인 미리보기 사진 ----------
+   디자인마다 견본 자막의 글자·글꼴·효과 값으로 "지문"을 만들고, 프리미어로 뽑은 사진을 지문별로 보관한다.
+   템플릿을 다시 넣어도 지문이 같은 디자인은 예전 사진을 그대로 쓰고, 바뀌었거나 새로 생긴 디자인만 다시 뽑는다. 공유 학습 폴더가 있으면 팀이 같이 쓴다. */
+const PV = { map: store.get('fx-previews') || {} };
+function fpOf(Tp, d) {
+  let s = ''; for (const dc of d.clips) { for (const cp of Tp.comps(dc.clip.node)) for (const p of Tp.params(cp)) if (p) s += p.textContent; s += '|' + Math.round((dc.clip.end - dc.clip.start) / T * 10) + '|' + Math.round(dc.offset / T * 10); }
+  let h1 = 0x811c9dc5, h2 = 7; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = (Math.imul(h2, 31) + c) >>> 0; }
+  return h1.toString(16) + h2.toString(16) + s.length.toString(16);
+}
+const pvOf = d => (st.tp && d) ? PV.map[d.fp || (d.fp = fpOf(st.tp, d))] || null : null;
+function savePV() { try { localStorage.setItem('fx-previews', JSON.stringify(PV.map)); } catch (e) { const ks = Object.keys(PV.map); for (const k of ks.slice(0, Math.ceil(ks.length / 3))) delete PV.map[k]; try { localStorage.setItem('fx-previews', JSON.stringify(PV.map)); } catch (e2) {} } } // 꽉 차면 오래된 것부터 버린다
+async function loadSharedPV() { // 팀이 뽑아 둔 사진 받아 오기
+  const LA = learnApi(); if (!LA || !st.cur) return; try { const r = await LA.load({ tool: 'fxpreview', client: clientKey(st.cur) }); let n = 0; for (const x of r.items || []) if (x && x.kind === 'img' && /^[0-9a-f]+$/.test(x.fp || '') && /^data:image\/jpeg;base64,/.test(x.data || '') && !PV.map[x.fp]) { PV.map[x.fp] = x.data; n++; } if (n) { savePV(); renderClient(); renderItems(); } } catch (e) {}
+}
+const missingPV = () => st.cat ? st.cat.designs.filter(d => !pvOf(d)) : [];
+async function makePreviews(given) {
+  const api = window.parent && window.parent !== window ? window.parent.thumbApi : null; if (!api) return;
+  const note = { set textContent(v) { st.pvMsg = v; const e = $('pvState'); if (e) e.textContent = v; } }; // 화면이 다시 그려져도 안내가 남게 상태에 둔다
+  try {
+    note.textContent = '템플릿 프로젝트 파일을 골라 주세요 (등록한 것과 같은 파일).'; const path = typeof given === 'string' ? given : await api.pick('project'); if (!path) { note.textContent = ''; return; }
+    const Tp = await E.Proj.fromBytes(new Uint8Array(await api.read(path)), path.split('\\').pop()), cat = E.analyzeTemplate(Tp), need = cat.designs.filter(d => !PV.map[d.fp = fpOf(Tp, d)]);
+    if (!need.length) { note.textContent = '모든 디자인의 사진이 이미 있습니다. 템플릿의 디자인이 바뀌면 바뀐 것만 다시 뽑습니다.'; return; }
+    const spec = need.map(d => { const a = Math.max(...d.clips.map(x => x.clip.start)), z = d.clips[0].clip.end, t = (a + (z - a) * 0.6) / E.TICKS; return t.toFixed(3) + '@' + [...new Set(d.clips.map(x => x.clip.track))].join(','); });
+    note.textContent = `프리미어를 켜서 디자인 ${need.length}개의 사진을 뽑는 중… (1~3분, 끝날 때까지 프리미어를 건드리지 마세요)`; st.pvBusy = true; if ($('btnPrev')) $('btnPrev').disabled = true;
+    const r = await api.run({ project: path, format: 'jpg', ext: 'design:' + encodeURIComponent(cat.seq.name) + ';' + spec.join(';'), count: 1, track: 0, cands: 1 });
+    if (r.error || !r.cands) throw new Error(r.error || r.log || '사진을 받지 못했습니다');
+    const got = [];
+    for (const c of r.cands) {
+      const k = +((/^c(\d+)\.jpg$/.exec(c.name) || [])[1]), d = need[k]; if (!d) continue;
+      const im = await new Promise((res, rej) => { const x = new Image(); x.crossOrigin = 'anonymous'; x.onload = () => res(x); x.onerror = () => rej(new Error('사진을 읽지 못했습니다')); x.src = 'etv://cand/' + c.name + '?t=' + Date.now(); });
+      const cv = document.createElement('canvas'), w = 320; cv.width = w; cv.height = Math.round(im.naturalHeight / im.naturalWidth * w); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      PV.map[d.fp] = cv.toDataURL('image/jpeg', 0.7); got.push({ kind: 'img', fp: d.fp, name: d.name, data: PV.map[d.fp] });
+    }
+    savePV(); const LA = learnApi(); let shared = false;
+    if (LA && got.length && st.cur) { try { shared = (await LA.put({ tool: 'fxpreview', client: clientKey(st.cur), rec: 'p' + Date.now().toString(36), items: got })).shared; } catch (e) {} }
+    note.textContent = `디자인 사진 ${got.length}개를 뽑았습니다${shared ? ' (팀 공유 폴더에도 올렸습니다)' : ''}. 프리미어는 "저장 안 함"으로 닫으면 됩니다.`; renderClient(); renderItems();
+  } catch (er) { note.textContent = '사진을 뽑지 못했습니다: ' + (er.message || er); }
+  st.pvBusy = false; if ($('btnPrev')) $('btnPrev').disabled = false;
+}
+/* 사진으로 고르기: 한 줄 / 두 줄 / 꺼 둔 디자인 묶음으로 사진을 펼쳐 보여 준다 */
+function openPicker(cur, onPick) {
+  const c = st.clients[st.cur], back = el('div', { class: 'pvback' }), box = el('div', { class: 'pvbox', role: 'dialog', 'aria-label': '디자인 고르기' }), close = () => back.remove();
+  back.onclick = e => { if (e.target === back) close(); }; back.onkeydown = e => { if (e.key === 'Escape') close(); };
+  box.append(el('div', { class: 'actions' }, el('b', { text: '디자인 고르기' }), el('button', { text: '닫기', onclick: close })));
+  for (const [label, f] of [['한 줄', d => !d.two && isOn(c, d)], ['두 줄', d => d.two && isOn(c, d)], ['꺼 둔 디자인', d => !isOn(c, d)]]) {
+    const ds = st.cat.designs.filter(f); if (!ds.length) continue; const grid = el('div', { class: 'pvgrid' });
+    for (const d of ds) { const p = pvOf(d), b = el('button', { class: 'pvcell' + (d.name === cur ? ' sel' : ''), title: d.name }, p ? el('img', { src: p, alt: '' }) : el('div', { class: 'pvnone', text: '사진 없음' }), el('span', { text: d.name })); b.onclick = () => { close(); onPick(d.name); }; grid.append(b); }
+    box.append(el('h4', { text: label }), grid);
+  }
+  back.append(box); document.body.append(back); const f = box.querySelector('.pvcell.sel') || box.querySelector('.pvcell'); if (f) f.focus();
+}
 function renderClient() {
   const c = st.clients[st.cur], box = $('clientInfo'); box.textContent = ''; box.hidden = !c;
   $('nameT').textContent = c && c.tplName ? c.tplName + ' · ' + c.tplDate + ' 등록 (다시 넣으면 교체)' : '이 업체의 템플릿 .prproj 를 넣으세요'; $('dropT').classList.toggle('ok', !!(c && c.tplName));
@@ -1433,8 +1524,11 @@ function renderClient() {
   if (!c) return;
   if (st.cat) {
     const chips = el('div', { class: 'usage' });
-    st.cat.designs.forEach((d, k) => { const b = el('button', { id: 'dz-' + k, class: 'chip' + (isOn(c, d) ? ' on' : ''), text: d.name, title: isOn(c, d) ? '누르면 이 디자인을 쓰지 않습니다' : '누르면 이 디자인을 다시 씁니다' }); b.onclick = async () => { c.off = c.off || {}; c.off[d.name] = isOn(c, d); await saveClient(); renderClient(); }; chips.append(b); });
-    box.append(el('div', { class: 'note', text: `템플릿에서 읽은 효과자막 디자인 ${st.cat.designs.length}종 가운데 ${st.cat.designs.filter(d => isOn(c, d)).length}종을 씁니다. 누르면 켜고 끕니다. 화면 가운데에 뜨는 공중형·목록형 등은 꺼 두었습니다.` }), chips);
+    st.cat.designs.forEach((d, k) => { const p = pvOf(d), b = el('button', { id: 'dz-' + k, class: 'chip' + (isOn(c, d) ? ' on' : '') + (p ? ' pic' : ''), title: isOn(c, d) ? '누르면 이 디자인을 쓰지 않습니다' : '누르면 이 디자인을 다시 씁니다' }, p ? el('img', { src: p, alt: '' }) : null, el('span', { text: d.name })); b.onclick = async () => { c.off = c.off || {}; c.off[d.name] = isOn(c, d); await saveClient(); renderClient(); }; chips.append(b); });
+    const miss = missingPV().length, inApp = !!(window.parent && window.parent !== window && window.parent.thumbApi);
+    box.append(el('div', { class: 'note', text: `템플릿에서 읽은 효과자막 디자인 ${st.cat.designs.length}종 가운데 ${st.cat.designs.filter(d => isOn(c, d)).length}종을 씁니다. 누르면 켜고 끕니다. 화면 가운데에 뜨는 공중형·목록형 등은 꺼 두었습니다.` }),
+      inApp ? el('div', { class: 'actions' }, el('button', { id: 'btnPrev', text: miss ? `디자인 사진 만들기 (${miss}개 없음)` : '디자인 사진 다시 확인', onclick: () => makePreviews() }), el('span', { class: 'note', id: 'pvState', text: st.pvMsg || (miss ? '프리미어를 끈 상태에서 누르면 템플릿의 디자인마다 사진을 뽑아 옵니다. 업체당 한 번이면 되고, 템플릿이 바뀌면 바뀐 디자인만 다시 뽑습니다.' : '') })) : null, chips);
+    if ($('btnPrev')) $('btnPrev').disabled = !!st.pvBusy;
   }
   if (c.style) {
     const s = c.style, u = Object.entries(s.usage).sort((a, b) => b[1] - a[1]);
@@ -1492,8 +1586,8 @@ hookDrop('dropM', 'fileM', async files => {
 function makePrompt() {
   const c = st.clients[st.cur] || {}, s = effStyle(c), L = st.lines, mins = (L[L.length - 1].t1 - L[0].t0) / T / 60, per = parseFloat($('perMin').value) || 6, want = Math.max(1, Math.round(per * mins));
   const nD = onDesigns().length, many = nD >= 10, cap = Math.max(3, Math.ceil(want * 0.12)), kinds = Math.min(nD, want, Math.round(nD * 0.6));
-  const variety = many ? `쓸 수 있는 디자인이 ${nD}종으로 많다. 최대한 여러 종류를 써라: 한 디자인은 많아도 ${cap}번까지만 쓰고, 같은 디자인을 연달아 두 번 쓰지 말고, 전체에서 적어도 ${kinds}종 이상이 쓰이게 하라. 어필·일반 계열은 어디에나 무난해서 몰리기 쉽다. 이 둘을 고르기 전에 목록의 다른 디자인(감정 계열, 고객 말, 하단 포인트, 부정/금지, 두 줄형 등) 가운데 그 대목에 더 꼭 맞는 것이 없는지 먼저 따져 보고, 있으면 그것을 써라. 이름 끝의 번호만 다른 디자인(1, 2, 3 …)은 같은 쓰임의 다른 모양이니 번갈아 써라. 위에 적힌 디자인별 사용 횟수는 지난 기록일 뿐이니 그 비율을 따라 하지 마라. 단, 맥락에 안 맞는 디자인을 종류를 채우려고 억지로 쓰지는 마라.` : '디자인 종류가 적으니 같은 디자인이 여러 번 나와도 된다. 다만 같은 디자인을 연달아 쓰는 것은 피하라.';
-  const designs = onDesigns().map(d => `- ${d.name} : ${d.two ? '두 줄형 (small + main + main2)' : d.clips[0].slots.small != null ? '한 줄형 (small + main)' : '한 줄형 (main만)'}${segHint(d) ? ' · main 색 구간: ' + segHint(d) : ''}`).join('\n');
+  const variety = many ? `쓸 수 있는 디자인이 ${nD}종으로 많다. 최대한 여러 종류를 써라: 한 디자인은 많아도 ${cap}번까지만 쓰고, 같은 디자인을 연달아 두 번 쓰지 말고, 전체에서 적어도 ${kinds}종 이상이 쓰이게 하라. 어필·일반 계열은 어디에나 무난해서 몰리기 쉽다. 이 둘을 고르기 전에 목록의 다른 디자인(감정 계열, 고객 말, 하단 포인트, 부정/금지 등) 가운데 그 대목에 더 꼭 맞는 것이 없는지 먼저 따져 보고, 있으면 그것을 써라. 이름 끝의 번호만 다른 디자인(1, 2, 3 …)은 같은 쓰임의 다른 모양이니 번갈아 써라. 위에 적힌 디자인별 사용 횟수는 지난 기록일 뿐이니 그 비율을 따라 하지 마라. 단, 맥락에 안 맞는 디자인을 종류를 채우려고 억지로 쓰지는 마라.` : '디자인 종류가 적으니 같은 디자인이 여러 번 나와도 된다. 다만 같은 디자인을 연달아 쓰는 것은 피하라.';
+  const designs = onDesigns().slice().sort((a, b) => a.two - b.two).map(d => `- ${d.name} : ${d.two ? '두 줄형 (small + main + main2)' : d.clips[0].slots.small != null ? '한 줄형 (small + main)' : '한 줄형 (main만)'}${segHint(d) ? ' · main 색 구간: ' + segHint(d) : ''}`).join('\n');
   let style = '(이 업체의 기록이 없다. 디자인 이름이 뜻하는 상황에 맞게 골라라.)';
   if (s) {
     const even = (a, n) => { const stp = Math.max(1, Math.floor(a.length / n)); return a.filter((_, i) => i % stp === 0).slice(0, n); };
@@ -1530,7 +1624,8 @@ ${designs}
 - main: 핵심 문구. 말을 그대로 옮기지 말고 예시처럼 핵심만 줄여 써라. 길이와 말투(느낌표, 말줄임 등)는 예시를 따르라.
 - 색 구간: 디자인에 "main 색 구간: A | B | C"가 적혀 있으면 main이 그 수만큼의 색으로 나뉘어 칠해진다(보통 가운데 구간이 강조색). main 안에 "|"를 넣어 같은 수의 구간으로 나눠라. 가장 강조할 낱말이 강조색 구간에 오게 하고, 띄어쓰기는 "|" 앞이나 뒤에 그대로 넣어라. 예: 색 구간이 셋이면 "치료 결과에 |중요한 건 |'색'!". 구간 표시가 없는 디자인이면 "|"를 쓰지 마라.
 - 끝맺음: 한눈에 읽혀야 한다. "~해요", "~있어요", "~많아요", "~합니다"처럼 문장으로 끝내지 말고, 명사나 짧은 구로 끝나는 요약형으로 써라(예: "얇고 말랑한 느낌인 경우가 많아요" → "얇고 말랑한 촉감", "밝은 곳에서 색을 확인해 보세요" → "밝은 곳에서 색 확인하기"). 예외: 원장이 환자의 말을 대신 옮기는 대목(예: "어머 요즘 시술이 너무 좋아요~")이나 질문 디자인의 질문은 말투 그대로 써도 된다.
-- main2: 두 줄형 디자인일 때만 쓰는 둘째 줄(main에 이어지는 결론). 한 줄형이면 빈 문자열. 내용이 길어 한 줄에 안 담기면 두 줄형을 골라라. 두 줄형은 main이 왼쪽 위, main2가 오른쪽 아래에 엇갈려 놓이므로 두 줄의 길이가 비슷해야 균형이 맞는다: main과 main2를 각각 공백 포함 10~16자로, 서로 4자 이상 차이 나지 않게 써라. main2가 짧은 한마디뿐이면 두 줄형을 쓰지 말고 한 줄형으로 줄여라.
+- 한 줄형 우선: 기본은 한 줄형 디자인이다. 핵심을 공백 포함 16자 안팎 한 줄로 줄일 수 있으면 반드시 한 줄형을 써라. 두 줄형은 앞말과 결론이 둘 다 꼭 필요해서 한 줄로 줄이면 뜻이 망가지는 대목에만 쓰고, 전체의 25%를 넘기지 마라. 한 줄형 디자인이 목록에 있는데 두 줄형만 쓰면 잘못이다.
+- main2: 두 줄형 디자인일 때만 쓰는 둘째 줄(main에 이어지는 결론). 한 줄형이면 빈 문자열. 두 줄형은 main이 왼쪽 위, main2가 오른쪽 아래에 엇갈려 놓이므로 두 줄의 길이가 비슷해야 균형이 맞는다: main과 main2를 각각 공백 포함 10~16자로, 서로 4자 이상 차이 나지 않게 써라. main2가 짧은 한마디뿐이면 두 줄형을 쓰지 말고 한 줄형으로 줄여라.
 - 넣지 말아야 할 곳: 인사말, 이어 주는 말("그리고", "그래서 이제"), 앞에서 이미 강조한 내용의 되풀이, 핵심이 없는 평범한 설명에는 넣지 마라. 넣을지 망설여지면 넣지 마라.
 - 의료 광고다. "100% 효과", "완치", "부작용 없음"처럼 효과를 보장하거나 단정하는 표현, 다른 병원을 깎아내리는 표현은 쓰지 마라.
 
@@ -1584,12 +1679,17 @@ function renderItems() {
   $('listInfo').textContent = st.items.length ? `제안 ${st.items.length}개 중 ${on.length}개를 넣습니다. 문구와 디자인을 고치거나, 필요 없는 것은 빼세요.` : '';
   st.items.forEach((it, i) => {
     const bind = (inp, key) => { inp.value = it[key]; inp.oninput = () => { it[key] = inp.value; }; inp.onchange = () => { fixDesign(it); renderItems(); }; return inp; };
-    const ds = el('select', { id: 'd-' + i }); for (const d of onDesigns()) ds.append(el('option', { value: d.name, text: d.name })); ds.value = it.design; ds.onchange = () => { it.design = ds.value; const d = st.cat.designs.find(x => x.name === ds.value); if (d && !d.two && it.main2) { it.main = (it.main + ' ' + it.main2).trim(); it.main2 = ''; } renderItems(); };
+    // 고르는 칸: 템플릿의 디자인을 모두 보여 준다. 한 줄형 먼저, 안 쓰기로 꺼 둔 디자인은 맨 아래 따로.
+    const ds = el('select', { id: 'd-' + i }), cc = st.clients[st.cur];
+    for (const [label, f] of [['한 줄', d => !d.two && isOn(cc, d)], ['두 줄', d => d.two && isOn(cc, d)], ['꺼 둔 디자인', d => !isOn(cc, d)]]) { const g = el('optgroup', { label }); for (const d of st.cat.designs.filter(f)) g.append(el('option', { value: d.name, text: d.name })); if (g.children.length) ds.append(g); }
+    ds.value = it.design;
+    const pv = pvOf(st.cat.designs.find(x => x.name === it.design)), pick = el('button', { class: 'pvpick', id: 'dp-' + i, title: '사진을 보고 디자인 고르기', 'aria-label': '사진을 보고 디자인 고르기' }, pv ? el('img', { src: pv, alt: '' }) : el('span', { text: '🖼️ 사진으로 고르기' }));
+    pick.onclick = () => openPicker(it.design, name => { ds.value = name; ds.dispatchEvent(new Event('change')); }); ds.onchange = () => { it.design = ds.value; const d = st.cat.designs.find(x => x.name === ds.value); if (d && !d.two && it.main2) { it.main = (it.main + ' ' + it.main2).trim(); it.main2 = ''; } renderItems(); };
     const d = st.cat.designs.find(x => x.name === it.design) || {}, hasSmall = d.clips && d.clips[0].slots.small != null;
     const tog = el('button', { id: 'x-' + i, text: it.on ? '빼기' : '다시 넣기' }); tog.onclick = () => { it.on = !it.on; renderItems(); };
     const small = bind(el('input', { type: 'text', id: 's-' + i, placeholder: hasSmall ? '작은 줄 (비우면 숨김)' : '이 디자인은 작은 줄 없음' }), 'small'); small.disabled = !hasSmall;
     const m2 = bind(el('input', { type: 'text', id: 'm2-' + i, placeholder: d.two ? '둘째 줄' : '둘째 줄 (쓰면 두 줄 디자인으로 바뀜)' }), 'main2');
-    box.append(el('div', { class: 'item' + (it.on ? '' : ' offx') }, el('div', { class: 't', text: tc(it.t0 / T) + '\n–' + tc(it.t1 / T) }), el('div', { class: 'said', text: '말: ' + it.said + (it.why ? '   ·   고른 이유: ' + it.why : '') }), el('div', {}), el('div', { class: 'fields' }, ds, small, bind(el('input', { type: 'text', id: 'm-' + i, placeholder: d.clips && segHint(d) ? '큰 줄 · 색 구간: ' + segHint(d) : '큰 줄', title: d.clips && segHint(d) ? '"|"로 나누면 그 자리에서 색이 바뀝니다. 나누지 않으면 자동으로 나눕니다.' : '' }), 'main'), m2, tog)));
+    box.append(el('div', { class: 'item' + (it.on ? '' : ' offx') }, el('div', { class: 't', text: tc(it.t0 / T) + '\n–' + tc(it.t1 / T) }), el('div', { class: 'said', text: '말: ' + it.said + (it.why ? '   ·   고른 이유: ' + it.why : '') }), el('div', {}), el('div', { class: 'fields' }, ds, pick, small, bind(el('input', { type: 'text', id: 'm-' + i, placeholder: d.clips && segHint(d) ? '큰 줄 · 색 구간: ' + segHint(d) : '큰 줄', title: d.clips && segHint(d) ? '"|"로 나누면 그 자리에서 색이 바뀝니다. 나누지 않으면 자동으로 나눕니다.' : '' }), 'main'), m2, tog)));
   });
   renderGuide();
   $('btnBuild').disabled = !on.length; $('buildWhy').textContent = st.items.length && !on.length ? '넣을 효과자막이 하나도 남지 않았습니다.' : !st.items.length && st.M ? '3단계에서 효과자막 제안을 받으면 만들 수 있습니다.' : '';

@@ -6,38 +6,38 @@
  },
  {
   "path": "pages/extract.html",
-  "size": 138972,
-  "sha256": "704e6dddeae7277187c2845b57a50138d298cd2724a91ba564bb721b18fcb472"
+  "size": 142843,
+  "sha256": "667d7a5390af1f0892ad7a8b0086f1992bb9826315bb668ef0157e010e3b4649"
  },
  {
   "path": "pages/fx.html",
-  "size": 173398,
-  "sha256": "71a0f93aad38c17de23a2a1e46013b89855d675093f4176f28c9d6b1e1e9c258"
+  "size": 186925,
+  "sha256": "8a3e60b6eef7243c25fcf422ad33600edd32e17677484f0a09f754e3435401ee"
  },
  {
   "path": "pages/highlight.html",
-  "size": 143785,
-  "sha256": "d7a3b5b951eb92af909da0126895a0a059a333293a2d016bdd16711a3d8693be"
+  "size": 147656,
+  "sha256": "07236b659982b1bef5c6095e2eb8ac35aec3ec2fa21b3ad462cc8d4b2714446e"
  },
  {
   "path": "pages/shorts.html",
-  "size": 175430,
-  "sha256": "10ab7fe7f7a2df6db0a939e6a8a216c33ec6e1dc056aaa4cb5b9200c431ea21f"
+  "size": 179301,
+  "sha256": "b0d04e66fcb87b201abd559c1b2c6d1ebed0677d1d5d6ea6f875fa3a05688879"
  },
  {
   "path": "pages/spell.html",
-  "size": 145344,
-  "sha256": "14e23701e3733c924ebe73e0035c13834502c297e298830d70524a248554f988"
+  "size": 149215,
+  "sha256": "893ea25dd5c24ce2a7f7099ffc3789c4fd5fbb980ca5fd5d615964e1ca8b2626"
  },
  {
   "path": "pages/subtitle.html",
-  "size": 149022,
-  "sha256": "81a511be035d15fa07060f1690f7775ba325e447908124ff8f982ba2a162bea7"
+  "size": 152893,
+  "sha256": "65cc171ee0250715e74b465979f71ad7fcdc4a98e618fefda26bd34907f009f8"
  },
  {
   "path": "pages/thumb.html",
-  "size": 141231,
-  "sha256": "500961788d03cc21ef6201a6263c02ef32b4b2c9d8062a7c3c92722b90b091ca"
+  "size": 145102,
+  "sha256": "c7e8a1fb6ceefab91591b7f87424cbe1f63f9768ef93e7b98965d340956b7840"
  },
  {
   "path": "thumb/jpg.epr",
@@ -56,8 +56,8 @@
  },
  {
   "path": "thumb/thumb.jsx",
-  "size": 9362,
-  "sha256": "33c4ab96ee4b3bc227eb2f1bbf78e93cb65fc1af3d1e3fd119692c74bcebd540"
+  "size": 11545,
+  "sha256": "d6225663e444177d966151f8a93b7cb6f2f8f2e06fb1abeada6b2fe7ca319a6a"
  },
  {
   "path": "thumb/tiff16.epr",
@@ -71,7 +71,7 @@
  },
  {
   "path": "version.json",
-  "size": 146,
-  "sha256": "50674497272afc508e115b45e87ae15337f6042ff56018617226268a038e02d7"
+  "size": 152,
+  "sha256": "22a9ab656e95fe8118e82753403170149e7e322e77e163702451c5a40103fc1a"
  }
 ]

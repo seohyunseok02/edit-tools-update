@@ -905,9 +905,15 @@ function setBypass(P, comp, on) {
 }
 /* 템플릿 프로젝트에서 효과자막 디자인 목록을 읽는다.
    디자인 = 이름 레이어(예: "일반4", "상황 - 감성") + 첨자 줄 + 본문 줄. 두 줄짜리는 1초 뒤에 뜨는 둘째 클립이 붙는다. */
+/* 템플릿 안의 시퀀스 가운데 디자인 견본이 든 것을 찾는다: 이름이 tem·템플릿인 것 먼저, 그다음 글자 클립이 많은 순서. (템플릿 파일에 작업한 본편 시퀀스가 같이 들어 있는 경우가 있다) */
 function analyzeTemplate(Tp) {
-  let seq = null, bn = -1; for (const s of Tp.seqs()) { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; if (n > bn) { bn = n; seq = s; } }
-  if (!seq || bn < 1) throw new Error('템플릿 프로젝트에서 자막이 들어 있는 시퀀스를 찾지 못했습니다');
+  const cnt = s => { let n = 0; for (const t of s.vtracks) for (const c of Tp.items(t)) if (Tp.info(c).kind === 'text') n++; return n; };
+  const list = Tp.seqs().map(s => ({ s, n: cnt(s), tem: /^tem|템플릿|template/i.test(s.name) })).filter(x => x.n > 0).sort((a, b) => (b.tem - a.tem) || (b.n - a.n));
+  if (!list.length) throw new Error('템플릿 프로젝트에서 자막이 들어 있는 시퀀스를 찾지 못했습니다');
+  let err = null; for (const x of list) { try { return analyzeTemplateSeq(Tp, x.s); } catch (e) { err = err || e; } }
+  throw err;
+}
+function analyzeTemplateSeq(Tp, seq) {
   const V = seq.vtracks.map((t, i) => Tp.items(t).map(n => Object.assign(Tp.info(n), { track: i }))).flat();
   const A = seq.atracks.map((t, i) => Tp.items(t).map(n => Object.assign(Tp.info(n), { track: i }))).flat().filter(c => c.end - c.start < 20 * TICKS && !/intro|transition|ending|preview/i.test(c.name));
   const texts = V.filter(c => c.kind === 'text').sort((a, b) => a.start - b.start || a.track - b.track), used = new Set(), designs = [];
@@ -921,13 +927,32 @@ function analyzeTemplate(Tp) {
       const mi = ls.findIndex((t, i) => i !== si && i !== ni && isPlaceholder(t));
       if (ni < 0 || mi < 0) continue; name = ls[ni]; nameLayer = ni; slots = { small: si, main: mi };
     } else if (c.layers.length === 1 && /(포인트|멘트) 자막입니다/.test(ls[0])) { name = ls[0].replace(/[“”"]/g, '').replace(/\s*자막입니다.*/, '').trim(); slots = { main: 0 }; }
-    else continue;
+    else {
+      // 견본 자리에 실제 문구를 채워 둔 템플릿(예: 서울그린치과 "심플 1", "일반 1"): 꺼 둔 이름 레이어 + 보이는 글자 1~2줄. 두 줄이면 짧은 쪽이 첨자, 긴 쪽이 본문.
+      const ni = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t)), vis = ls.map((t, i) => i).filter(i => i !== ni && ls[i] && !c.layers[i].off && c.layers[i].param);
+      if (ni < 0 || !vis.length || vis.length > 2 || c.end - c.start > 8 * TICKS || /들어갑니다|들어가는|담을 수/.test(ls[ni]) || /말풍선|상대방|말자막|게스트|이름|직업|CTA|엔딩|카카오|채널|밑줄|넘버링|사진|출처|소제목|요청|제목|로고|logo|가이드|guide|메모|참고/i.test(ls[ni])) continue;
+      const mi = vis.length === 2 && [...ls[vis[0]]].length > [...ls[vis[1]]].length ? vis[0] : vis[vis.length - 1];
+      name = ls[ni]; nameLayer = ni; slots = { main: mi }; if (vis.length === 2) slots.small = vis.find(i => i !== mi);
+    }
     used.add(c.id);
     const d = { name, base: name, nameLayer, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[slots.main].font };
     const fol = texts.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS && x.layers.some(L => isPlaceholder(oneLine(L.text))));
     if (fol) { const fm = fol.layers.findIndex(L => isPlaceholder(oneLine(L.text))); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
     d.sfx = A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name }));
     designs.push(d);
+  }
+  // 이름표가 없어 못 알아본 한 줄 자막: 템플릿에서 한 줄 자막은 두 줄 자막보다 앞에 놓인다. 디자인이 놓인 트랙에서 첫 두 줄 디자인보다 앞에 있는 짧은 글자 클립을 한 줄 디자인으로 본다.
+  const twoStart = Math.min(...designs.filter(d => d.two).map(d => d.clips[0].clip.start)), dTracks = new Set(designs.map(d => d.clips[0].clip.track));
+  const junk = /느낌|스타일|이런 |예시|하기에|사용법|참고|말자막|게스트|홍길동|목록|BOX|박스|하이라이트|PIP|Chapter|챕터|타이틀|말풍선|설명|가이드|on\/off|그라데이션|CTA|엔딩|카카오|채널|밑줄|넘버링|사진|출처|소제목|요청|제목|로고|logo|본편/i;
+  let guess = 0;
+  if (isFinite(twoStart)) for (const c of texts) {
+    if (used.has(c.id) || c.start >= twoStart || !dTracks.has(c.track) || c.end - c.start > 8 * TICKS) continue;
+    if (texts.some(x => x !== c && x.track !== c.track && x.end - x.start <= 10 * TICKS && Math.min(x.end, c.end) - Math.max(x.start, c.start) > (c.end - c.start) * 0.5)) continue; // 다른 트랙 글자와 겹쳐 뜨면 여러 클립짜리 그래픽(이름표, 두 줄형 윗줄 등)의 일부다
+    const ls = c.layers.map(L => oneLine(L.text)), vis = ls.map((t, i) => i).filter(i => ls[i] && !c.layers[i].off && c.layers[i].param); if (!vis.length || vis.length > 2 || ls.some(t => junk.test(t))) continue;
+    const ni = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t)), mi = vis.length === 2 && [...ls[vis[0]]].length > [...ls[vis[1]]].length ? vis[0] : vis[vis.length - 1];
+    const slots = { main: mi }; if (vis.length === 2) slots.small = vis.find(i => i !== mi);
+    const hint = ls[mi].replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(), name = ni >= 0 ? ls[ni] : hint && [...hint].length <= 14 ? hint : '한 줄 ' + (++guess); used.add(c.id); // 이름이 없으면 견본 문구(예: "어필포인트 자막입니다" → "어필포인트")를 이름으로
+    designs.push({ name, base: name, nameLayer: ni, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[mi].font, guessed: true, sfx: A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name })) });
   }
   const count = {}; for (const d of designs) count[d.name] = (count[d.name] || 0) + 1;
   const seen = {}; for (const d of designs) if (count[d.name] > 1) { seen[d.name] = (seen[d.name] || 0) + 1; d.name = d.name + ' ' + seen[d.name]; }

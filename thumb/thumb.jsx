@@ -28,8 +28,33 @@
   app.openDocument(projFile.fsName, true, true, true);
   if (!app.project || !app.project.path) return finish('프로젝트를 열지 못했습니다: ' + projFile.fsName);
 
+  var seqs = app.project.sequences;
+  // 디자인 미리보기 모드(효과자막 탭): 확장자 칸에 "design:시퀀스이름;초@트랙,트랙;…" 이 온다. 시점마다 그 디자인의 트랙과 그 아래(배경)만 보이게 하고 JPEG 한 장씩 뽑는다.
+  var DESIGN = /^design:/.test(String(cfg['확장자'] || '')) ? String(cfg['확장자']).slice(7).split(';') : null;
+  if (DESIGN) {
+    var want = decodeURIComponent(DESIGN[0]), dseq = null;
+    for (i = 0; i < seqs.numSequences; i++) if (seqs[i].name === want) dseq = seqs[i];
+    if (!dseq) return finish('템플릿에서 "' + want + '" 시퀀스를 찾지 못했습니다.');
+    app.project.openSequence(dseq.sequenceID); app.project.activeSequence = dseq;
+    var dtr = dseq.videoTracks, dn = dtr.numTracks, dm = [], dfr = Number(dseq.timebase) / 254016000000, oi = dseq.getInPoint(), oo = dseq.getOutPoint(), dl = [], derr = '', cdir2 = new Folder(cfg['후보폴더']);
+    for (i = 0; i < dn; i++) dm[i] = dtr[i].isMuted();
+    try {
+      for (k = 1; k < DESIGN.length; k++) {
+        var parts = DESIGN[k].split('@'), tt = Math.round(parseFloat(parts[0]) / dfr) * dfr, keep = String(parts[1] || '').split(','), lo = 999, j;
+        for (j = 0; j < keep.length; j++) lo = Math.min(lo, parseInt(keep[j], 10));
+        for (j = 0; j < dn; j++) { var show = j < lo, q; for (q = 0; q < keep.length; q++) if (parseInt(keep[q], 10) === j) show = true; dtr[j].setMute(show ? 0 : 1); }
+        dseq.setInPoint(tt); dseq.setOutPoint(tt + dfr);
+        var pth = cdir2.fsName + '/c' + (k - 1) + '.jpg', rr = String(dseq.exportAsMediaDirect(new File(pth).fsName, candPreset.fsName, app.encoder.ENCODE_IN_TO_OUT));
+        if (new File(pth).exists) dl.push('c' + (k - 1) + '.jpg|' + tt); else derr = rr;
+      }
+    } catch (de) { derr = String(de.message || de); }
+    for (i = 0; i < dn; i++) { try { dtr[i].setMute(dm[i] ? 1 : 0); } catch (e3) {} }
+    try { dseq.setInPoint(Number(oi)); dseq.setOutPoint(Number(oo)); } catch (e4) {}
+    if (dl.length) writeText(cdir2.fsName + '/cands.txt', dl.join('\n'));
+    return finish('디자인 미리보기 ' + dl.length + '장을 뽑았습니다.' + (derr ? ' (실패: ' + derr + ')' : ''));
+  }
   // 시퀀스: 클립이 가장 많은 시퀀스(본편)를 쓴다
-  var seq = null, best = -1, seqs = app.project.sequences;
+  var seq = null, best = -1;
   for (i = 0; i < seqs.numSequences; i++) { var cnt = 0, vt = seqs[i].videoTracks; for (k = 0; k < vt.numTracks; k++) cnt += vt[k].clips.numItems; if (cnt > best) { best = cnt; seq = seqs[i]; } }
   if (!seq) return finish('이 프로젝트에 시퀀스가 없습니다.');
   app.project.openSequence(seq.sequenceID); app.project.activeSequence = seq;
