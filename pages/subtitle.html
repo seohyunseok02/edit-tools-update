@@ -921,14 +921,21 @@ function analyzeTemplateSeq(Tp, seq) {
   const texts = V.filter(c => c.kind === 'text').sort((a, b) => a.start - b.start || a.track - b.track), used = new Set(), designs = [];
   for (const c of texts) {
     if (used.has(c.id)) continue;
+    if (c.end - c.start > 12 * TICKS) continue; // 견본 자막은 몇 초짜리다. 길게 깔린 것은 안내 메모·소제목 같은 것
     const ls = c.layers.map(L => oneLine(L.text)), si = ls.findIndex(t => /^첨자\s*자막/.test(t)); let name, slots, nameLayer = -1;
     if (si >= 0) {
       // 디자인 이름은 화면에 안 보이게 꺼 둔 글자 레이어에 적혀 있다. 없으면 견본 문구가 아닌 짧은 글자를 이름으로 본다.
       let ni = ls.findIndex((t, i) => i !== si && c.layers[i].off && t && /[가-힣A-Za-z]/.test(t));
       if (ni < 0) ni = ls.findIndex((t, i) => i !== si && t && !isPlaceholder(t) && [...t].length <= 16 && !/^[QA][|]?$/.test(t) && /[가-힣]/.test(t));
       const mi = ls.findIndex((t, i) => i !== si && i !== ni && isPlaceholder(t));
-      if (ni < 0 || mi < 0) continue; name = ls[ni]; nameLayer = ni; slots = { small: si, main: mi };
+      if (mi < 0) continue; slots = { small: si, main: mi };
+      // 이름표가 없으면 견본 문구로 이름을 짓는다 ("일반 포인트 자막입니다" → "일반 포인트"). "내용이 많이 들어가는" 같은 두 줄형 윗줄은 아래에서 둘째 줄 문구로 짓는다.
+      if (ni >= 0) { name = ls[ni]; nameLayer = ni; } else {
+        const h = ls[mi].replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(), extra = String(c.layers[mi].text || '').split(/[\r\n]+/).map(oneLine).filter(t => t && !/들어가는|담을 수|들어갑니다/.test(t)); // "내용이 많이 들어가는\r질문 전용" → "질문 전용"
+        name = !/들어가는|담을 수|들어갑니다/.test(h) ? h : extra.length ? extra.join(' ').replace(/\s*자막.*$/, '').trim() : '';
+      }
     } else if (c.layers.length === 1 && /(포인트|멘트) 자막입니다/.test(ls[0])) { name = ls[0].replace(/[“”"]/g, '').replace(/\s*자막입니다.*/, '').trim(); slots = { main: 0 }; }
+    else if (c.layers.length === 1 && /들어가는|담을 수/.test(ls[0]) && c.layers[0].param && texts.some(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS)) { name = ''; slots = { main: 0 }; } // 첨자 없는 두 줄형 윗줄("내용이 많이 들어가는"): 이름은 둘째 줄에서
     else {
       // 견본 자리에 실제 문구를 채워 둔 템플릿(예: 서울그린치과 "심플 1", "일반 1"): 꺼 둔 이름 레이어 + 보이는 글자 1~2줄. 두 줄이면 짧은 쪽이 첨자, 긴 쪽이 본문.
       const ni = ls.findIndex((t, i) => c.layers[i].off && /[가-힣A-Za-z]/.test(t)), vis = ls.map((t, i) => i).filter(i => i !== ni && ls[i] && !c.layers[i].off && c.layers[i].param);
@@ -939,7 +946,8 @@ function analyzeTemplateSeq(Tp, seq) {
     used.add(c.id);
     const d = { name, base: name, nameLayer, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[slots.main].font };
     const fol = texts.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS && x.layers.some(L => isPlaceholder(oneLine(L.text))));
-    if (fol) { const fm = fol.layers.findIndex(L => isPlaceholder(oneLine(L.text))); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
+    if (fol) { const fm = fol.layers.findIndex(L => isPlaceholder(oneLine(L.text))); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!d.name) d.name = d.base = oneLine(fol.layers[fm].text).replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(); if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
+    if (!d.name) d.name = d.base = '포인트';
     d.sfx = A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name }));
     designs.push(d);
   }
