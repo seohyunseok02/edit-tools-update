@@ -1343,6 +1343,11 @@ function buildChapters(M, Tp, an, tpl, plan, opt) {
 /* ================= 자막 타이밍: 브루 XML의 시점을 실제 발화·컷에 맞춘다 =================
    재료: 교정 XML(문구 기준) · .vrew(단어별 발화 시간, mp3 기준 초) · mp3 파형(쉼) · 프로젝트(컷 위치). 문구는 한 글자도 바꾸지 않는다. */
 const ST = { mp3Delay: 0.047, snapBack: 7, snapFwd: 2, lateSnap: 5, onsetWin: 0.15, longGap: 2.5, tail: 0.3, maxChars: 22, minDur: 0.9 };
+// 브루가 한 단어를 두 자막 줄로 쪼개 놓은 경우, 뒷줄 첫머리에 홀로 설 수 없는 말이 온다 ("시스템 | 상에서의", "아니에요? | 라고")
+const GLUE = /^(상에서|상으로|상의|상에|에서|에게|에는|으로|로서|로써|라고|라는|라든지|라든가|이라고|이라는|이라든지|처럼|까지|부터|보다|이랑|랑|마저|조차|밖에)|^(은|는|을|를|의|에|도|만|와|과|요)[,.?!]?$/; // 홀로 쓰인 "이"·"가"는 "이 생활을"처럼 다른 낱말일 수 있어 빼고
+const ejText = (ej, a, b) => { let t = ''; for (let i = a; i <= b; i++) t += (i > a && !ej[i].glue ? ' ' : '') + ej[i].text; return t; }; // 붙은 조각은 띄어 쓰지 않는다
+/* 나누기를 다듬는다: 붙은 조각(glue) 앞에서는 끊지 않는다 */
+function keepGlue(segs, ej) { const out = segs.map(s => s.slice()); for (let k = 1; k < out.length; k++) { const s = out[k - 1], n = out[k]; while (n[0] <= n[1] && ej[n[0]].glue) { s[1]++; n[0]++; } if (n[0] > n[1]) { out.splice(k, 1); k--; } } return out; }
 const CONNECTIVE = /^(결국|또|또한|다만|그래서|그리고|특히|그러면|사실|즉|근데|그런데|하지만|그러니까|그래도|이제|먼저|첫째|둘째|셋째|첫 번째|두 번째|세 번째|어|네|아)[,.]?$/;
 /* FCP7 XML(브루·프리미어 내보내기)의 텍스트 생성기 자막을 읽는다 */
 function parseCaptionXml(text) {
@@ -1415,7 +1420,7 @@ function alignEojeol(cap, vrew, offset) {
     const A = [], Ai = []; cand.forEach((w, k) => { for (const chh of w.text.replace(/[^가-힣A-Za-z0-9]/g, '')) { A.push(chh); Ai.push(k); } });
     const al = G.length && A.length ? lcsAlign(G, A) : { to: [] }, t = ej.map(() => ({ t0: null, t1: null, n: 0 }));
     for (let g = 0; g < G.length; g++) { const j = al.to[g]; if (j == null || j < 0) continue; const w = cand[Ai[j]], x = t[Gi[g]]; x.n++; if (x.t0 == null || w.t0 < x.t0) x.t0 = w.t0; if (x.t1 == null || w.t1 > x.t1) x.t1 = w.t1; }
-    ej.forEach((e, k) => out.push({ text: e, clip: ci, t0: t[k].t0, t1: t[k].t1, ok: t[k].n > 0 }));
+    ej.forEach((e, k) => out.push({ text: e, clip: ci, t0: t[k].t0, t1: t[k].t1, ok: t[k].n > 0, glue: k === 0 && ci > 0 && GLUE.test(e) }));
   });
   // 못 맞춘 어절: 앞뒤 맞춘 어절 사이에 글자 수 비율로 놓는다
   for (let i = 0; i < out.length; i++) if (!out[i].ok) {
@@ -1427,7 +1432,8 @@ function alignEojeol(cap, vrew, offset) {
   return out;
 }
 /* 규칙 나누기: 원래 자막 단위를 기본으로, 짧은 조각·단독 연결어는 뒤와 합치고, 문장 끝 뒤에 붙은 다음 문장 첫말은 다음 자막으로 옮긴다. 결과 = 어절 범위 [a,b] 목록 */
-function ruleSegments(ej) {
+function ruleSegments(ej, L) {
+  L = L || {}; const lw = w => String(w || '').replace(/[,.?!~]/g, ''), learnPrev = w => !!(L.toPrev && L.toPrev.has(lw(w))), learnNext = w => !!(L.toNext && L.toNext.has(lw(w))), learnJoin = (a, b) => !!(L.join && L.join.has(lw(a) + '|' + lw(b))); // 편집자들이 고친 나누기에서 배운 낱말
   const segs = []; let a = 0;
   for (let i = 1; i <= ej.length; i++) if (i === ej.length || ej[i].clip !== ej[i - 1].clip) { segs.push([a, i - 1]); a = i; }
   const txtOf = s => ej.slice(s[0], s[1] + 1).map(x => x.text).join(' '), dur = s => ej[s[1]].t1 - ej[s[0]].t0, end = /(니다|요|죠|까|[었았였겠는]다|한다|된다|이다|있다|없다|란다|거든|잖아|말자|하자|보자)[.?!]?$|[.?!]$/, endW = w => end.test(w) || (/다[.?!]?$/.test(w) && [...w].length >= 2 && (j => j >= 0 && [20, 4].includes(j % 28))([...w.replace(/[.?!]$/, '')].slice(-2)[0].charCodeAt(0) - 0xAC00)); // "하다 보면"의 "하다"는 문장 끝이 아니다
@@ -1443,11 +1449,12 @@ function ruleSegments(ej) {
     const s = segs[k], n = segs[k + 1], first = ej[n[0]].text.replace(/[,.?!]$/, ''), last = ej[s[1]].text, prevEnd = endW(last) || /[.?!]$/.test(last);
     if (prevEnd) continue;
     // ① 앞말에 붙는 말(때·정도·부터·보면·되면·듯한 …)이나 짧은 동사로 끝나는 말 덩이("자서", "해서")가 다음 자막 첫머리에 오면 앞 자막으로
-    if (n[1] > n[0] && (BOUND.test(first) || DEP.test(first) || (/게$/.test(last) && /^(해|하|되|돼|만들)/.test(first)) || (CLAUSE.test(first) && [...first].length <= 3 && !CLAUSE.test(last))) && len(s[0], n[0]) <= ST.maxChars + 2) { s[1]++; n[0]++; continue; }
+    if (learnJoin(last, first) && len(s[0], n[1]) <= ST.maxChars + 2) { s[1] = n[1]; segs.splice(k + 1, 1); k--; continue; } // 편집자들이 늘 합치던 두 자막
+    if (n[1] > n[0] && (BOUND.test(first) || learnPrev(first) || DEP.test(first) || (/게$/.test(last) && /^(해|하|되|돼|만들)/.test(first)) || (CLAUSE.test(first) && [...first].length <= 3 && !CLAUSE.test(last))) && len(s[0], n[0]) <= ST.maxChars + 2) { s[1]++; n[0]++; continue; }
     // ①-2 말 덩이가 한두 어절 뒤에서 끝나고 합쳐도 짧으면 그 끝까지 앞 자막으로 ("2시 사이에 / 자게 되면" → 한 자막)
     if (!CLAUSE.test(last)) { let j = -1; for (let q = n[0]; q <= Math.min(n[0] + 1, n[1] - 1); q++) if ((CLAUSE.test(ej[q].text) && !isPred(q + 1)) || endW(ej[q].text)) { j = q; break; } if (j >= 0 && len(s[0], j) <= ST.maxChars && gapAfter(s[1]) < 0.5) { n[0] = j + 1; s[1] = j; continue; } }
     // ② 꾸미는 말(어떤·이런·어릴 …)이 앞 자막 끝에 남으면 다음 자막으로
-    if (s[1] > s[0] && MOD.test(last) && len(s[1], n[1]) <= ST.maxChars + 2) { s[1]--; n[0]--; continue; }
+    if (s[1] > s[0] && (MOD.test(last) || learnNext(last)) && len(s[1], n[1]) <= ST.maxChars + 2) { s[1]--; n[0]--; continue; }
     // ③ 실제로 쉬는 곳으로: 경계 한 어절 앞이나 뒤에 지금보다 0.15초 넘게 더 긴 쉼이 있으면 그쪽으로
     const here = gapAfter(s[1]), back = s[1] > s[0] ? gapAfter(s[1] - 1) : -1, fwd = n[1] > n[0] ? gapAfter(n[0]) : -1;
     if (fwd > here + 0.15 && fwd >= back && len(s[0], n[0]) <= ST.maxChars && !BOUND.test(ej[n[0] + 1] ? ej[n[0] + 1].text : '')) { s[1]++; n[0]++; }
@@ -1457,16 +1464,44 @@ function ruleSegments(ej) {
   for (let k = 0; k + 1 < segs.length;) { const s = segs[k], n = segs[k + 1], t = txtOf(s); if ((CONNECTIVE.test(t) || (dur(s) < ST.minDur && !CLAUSE.test(ej[s[1]].text))) && !endW(t) && [...(t + ' ' + txtOf(n))].length <= ST.maxChars) { n[0] = s[0]; segs.splice(k, 1); } else k++; } // 말 덩이가 끝난 짧은 자막("지속되어서")은 두기
   return segs;
 }
+/* 자막 타이밍 학습: 만든 자막(gen)과 편집자가 고친 자막(cur) 문구 목록을 어절로 맞춰 보고, 경계를 어디로 옮겼는지 뽑는다.
+   한 어절을 앞 자막으로 옮김 → toPrev, 뒤 자막으로 옮김 → toNext, 두 자막을 합침 → join. 같은 영상이 아니면(어절 70% 미만 일치) null */
+function subtimeDiff(gen, cur) {
+  const W = arr => { const w = [], last = []; arr.forEach(t => { const p = String(t).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean); p.forEach((x, i) => { w.push(x.replace(/[,.?!~]/g, '')); last.push(i === p.length - 1); }); }); return { w, last }; };
+  const g = W(gen), c = W(cur); if (!g.w.length || !c.w.length) return null; const al = lcsAlign(g.w, c.w);
+  let hit = 0; for (const j of al.to) if (j >= 0) hit++; if (hit < g.w.length * 0.7) return null;
+  const out = [], cBound = new Set(); for (let j = 0; j < c.w.length; j++) if (c.last[j]) cBound.add(j);
+  for (let i = 0; i + 1 < g.w.length; i++) {
+    const j = al.to[i]; if (j < 0) continue; const gB = g.last[i], cB = cBound.has(j);
+    if (gB && !cB) { // 만든 경계가 사라짐: 한 어절 옆으로 옮겼거나 합쳤다
+      const jn = al.to[i + 1], jp = i > 0 ? al.to[i - 1] : -1;
+      if (jn >= 0 && cBound.has(jn) && !g.last[i + 1]) out.push({ kind: 'toPrev', w: g.w[i + 1] });
+      else if (jp >= 0 && cBound.has(jp) && !g.last[i - 1]) out.push({ kind: 'toNext', w: g.w[i] });
+      else out.push({ kind: 'join', a: g.w[i], b: g.w[i + 1] });
+    }
+  }
+  return out;
+}
+/* 배운 기록 → 나누기 규칙에 넣을 낱말 모음 (두 번 이상 나온 것, 또는 한 사람이라도 같은 것을 고친 것) */
+function subtimeLearned(items) { const L = { toPrev: new Set(), toNext: new Set(), join: new Set(), n: 0 }; for (const x of items || []) { if (x.kind === 'toPrev' && x.w) L.toPrev.add(x.w); else if (x.kind === 'toNext' && x.w) L.toNext.add(x.w); else if (x.kind === 'join' && x.a && x.b) L.join.add(x.a + '|' + x.b); else continue; L.n++; } return L; }
+/* 편집 프로젝트를 열었을 때: 자막 타이밍이 만든 결과(이 PC에 기억)와 프로젝트의 말자막을 비교해 고친 나누기를 배운다. 같은 결과는 다시 고치면 최신 것으로 바뀐다 */
+async function learnSubtimeFromProject(P, LA) {
+  if (!LA || typeof localStorage === 'undefined') return 0; let outs = []; try { outs = JSON.parse(localStorage.getItem('subtime-outs') || '[]'); } catch (e) {} if (!outs.length) return 0;
+  const an = analyzeMid(P), cur = an.captions.map(c => layerTexts(c).join(' ')).filter(Boolean); if (cur.length < 10) return 0;
+  let best = null; for (const o of outs) { const d = subtimeDiff(o.texts, cur); if (d && (!best || d.length < best.d.length)) best = { o, d }; } if (!best) return 0;
+  try { await LA.put({ tool: 'subtime', client: '공통', rec: 'st' + best.o.id, items: best.d }); } catch (e) { return 0; } // 예전 프로그램 틀은 이 학습을 모른다
+  return best.d.length;
+}
 /* 나누기 검사: 모든 어절을 순서대로 빠짐없이 덮어야 한다 */
 function checkSegments(segs, n) { let next = 0; for (const s of segs) { if (!Array.isArray(s) || s[0] !== next || s[1] < s[0] || s[1] >= n) return false; next = s[1] + 1; } return next === n; }
 /* 시점 정하기: 말 시작(브루 + 파형) → 컷 맞추기 → 끝은 다음 자막까지(긴 무음이면 끊기) → 같은 문구 병합 → 정수 프레임 */
 function timeSegments(o) {
   const { ej, segs, env, cuts, fps, endF } = o, F = t => Math.round(t * fps), cutF = [...new Set(cuts.map(F))].sort((a, b) => a - b);
-  // 시작은 브루 단어 시작을 그대로 쓴다. 그 자리부터 0.15초 넘게 소리가 없다가 말이 시작되면(뚜렷한 쉼) 그 말 시작으로 옮긴다
+  // 시작은 브루 단어 시작을 그대로 쓴다. 첫소리가 약하면 파형으로는 늦게 잡히므로(자막이 말보다 늦게 뜸), 0.4초 넘게 아무 소리가 없는 뚜렷한 쉼일 때만 말 시작으로 옮긴다
   const out = segs.map(([a, b]) => { const t0 = ej[a].t0; let sp0 = t0, why = '브루', t1 = ej[b].t1;
-    if (env) { let q = t0; while (q < t0 + 0.6 && !vAt(env, q)) q += env.step; if (q - t0 >= 0.15 && q < t0 + 0.6) { sp0 = q; why = '쉼'; } else if (vAt(env, t0) && !vAt(env, t0 - 0.05)) why = '브루=쉼';
+    if (env) { let q = t0; while (q < t0 + 0.8 && !vAt(env, q)) q += env.step; if (q - t0 >= 0.4 && q < t0 + 0.8) { sp0 = q; why = '쉼'; } else if (vAt(env, t0) && !vAt(env, t0 - 0.05)) why = '브루=쉼';
       let e = t1; while (e > sp0 && !vAt(env, e)) e -= env.step; t1 = Math.max(sp0 + 0.1, Math.min(t1, e + 0.05)); }
-    return { a, b, text: ej.slice(a, b + 1).map(x => x.text).join(' '), sp0, sp1: t1, why, ok: ej.slice(a, b + 1).every(x => x.ok) }; });
+    return { a, b, text: ejText(ej, a, b), sp0, sp1: t1, why, ok: ej.slice(a, b + 1).every(x => x.ok) }; });
   let prevEnd = -1;
   out.forEach((s, k) => {
     let f = F(s.sp0); const prev = out[k - 1];
@@ -1495,7 +1530,7 @@ function runTiming(o) {
   const off = estimateOffset(env, cuts.filter(c => c < bodyEnd), cap.fps), sh = Math.round(off.offset / env.step), v = new Uint8Array(env.voiced.length);
   for (let k = 0; k < v.length; k++) { const q = k + sh; v[k] = q >= 0 && q < v.length ? env.voiced[q] : 0; } // 시퀀스 시간 기준 말소리 여부
   const envSeq = { step: env.step, db: env.db, voiced: v }, ej = alignEojeol(cap, vrew, off.offset);
-  const given = o.segs && checkSegments(o.segs, ej.length), segs = given ? o.segs : ruleSegments(ej);
+  const given = o.segs && checkSegments(o.segs, ej.length), segs = keepGlue(given ? o.segs : ruleSegments(ej, o.learned), ej);
   const out = timeSegments({ ej, segs, env: envSeq, cuts: cuts.filter(c => c < bodyEnd + 1), fps: cap.fps, endF: Math.round(bodyEnd * cap.fps) });
   return { cap, offset: off, ej, segs, out, bodyEnd, usedGiven: !!given, unaligned: ej.filter(x => !x.ok).length };
 }
@@ -1548,7 +1583,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, showGuide, ST, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
+const Engine = { TICKS, showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
@@ -1577,7 +1612,7 @@ hookDrop('dropM', 'fileM', async files => {
   show('err1', ''); $('nameM').textContent = files[0].name + ' 여는 중…'; await new Promise(r => setTimeout(r, 30));
   try {
     const bytes = new Uint8Array(await files[0].arrayBuffer()), P = await E.Proj.fromBytes(bytes, files[0].name);
-    st.M = P; st.mBytes = bytes; st.seqs = P.seqs().map(s => ({ s, n: s.vtracks.reduce((a, t) => a + P.items(t).filter(c => P.info(c).kind === 'text').length, 0) })).filter(x => x.n).map(x => ({ ...x, all: x.s.vtracks.reduce((a, t) => a + P.items(t).length, 0) })).sort((a, b) => b.all - a.all); // 본편 시퀀스(클립이 가장 많은 것)를 먼저 고른다
+    st.M = P; st.mBytes = bytes; try { E.learnSubtimeFromProject(P, learnApi()).catch(() => {}); } catch (e) {} st.seqs = P.seqs().map(s => ({ s, n: s.vtracks.reduce((a, t) => a + P.items(t).filter(c => P.info(c).kind === 'text').length, 0) })).filter(x => x.n).map(x => ({ ...x, all: x.s.vtracks.reduce((a, t) => a + P.items(t).length, 0) })).sort((a, b) => b.all - a.all); // 본편 시퀀스(클립이 가장 많은 것)를 먼저 고른다
     if (!st.seqs.length) throw new Error('이 프로젝트에서 글자가 든 그래픽을 찾지 못했습니다.');
     const sel = $('seqSel'); sel.textContent = ''; st.seqs.forEach((x, i) => sel.append(el('option', { value: i, text: `${x.s.name} (글자 클립 ${x.n}개)` })));
     $('nameM').textContent = files[0].name; $('dropM').classList.add('ok'); $('seqRow').hidden = false; readSeq();

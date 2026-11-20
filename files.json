@@ -6,43 +6,43 @@
  },
  {
   "path": "pages/extract.html",
-  "size": 170736,
-  "sha256": "4f6dd39bea132cf6c4e007a875b806f8f2e3f8929418fa92835b3985b08bf849"
+  "size": 175477,
+  "sha256": "151a0b5dc964899c6f52583cb98d396e54a795977869e52cd915686f30960f2e"
  },
  {
   "path": "pages/fx.html",
-  "size": 215320,
-  "sha256": "12e194ec9db991298b9ef8c3f32b48cf20b606fe010be36a4339fcee960402b1"
+  "size": 220140,
+  "sha256": "16950ba5d0d39fc42f99b5e0bb5f3a2da037dd7c03869f3b82222b611bb63842"
  },
  {
   "path": "pages/highlight.html",
-  "size": 175549,
-  "sha256": "9eaddff2a5dc43e02756c649be797f85c12e4c0185d184bd825d560acdbb8d51"
+  "size": 180290,
+  "sha256": "a566af4d10ba03a09d4a756b41c4b30ccf396905331828026dbac45e735ebbae"
  },
  {
   "path": "pages/shorts.html",
-  "size": 207194,
-  "sha256": "14259d1d44006f0617a8e2fc914a063637ef13d2c95718c45b607a44bae2a8ab"
+  "size": 211935,
+  "sha256": "6e89f2c406cc00c6fda293a521f7ff574572de41f305967e51ad64cc08286316"
  },
  {
   "path": "pages/spell.html",
-  "size": 177108,
-  "sha256": "1ceb766029177b2bc92281f13eaaad49463ed88ac2053e29087c6cb0add8aa1b"
+  "size": 181928,
+  "sha256": "fc654e49fba926a50c5a00a319851c234009b960a579e4b1967e4672abf4c0f3"
  },
  {
   "path": "pages/subtime.html",
-  "size": 172696,
-  "sha256": "6bdd1621c295674997187d37d0d55840ee94093cbe40556d60dca9101186e0d9"
+  "size": 180008,
+  "sha256": "c66f3b207721e9fcd396d53c9ca37da347b8aa9b21f04c8393fb558552035115"
  },
  {
   "path": "pages/subtitle.html",
-  "size": 180786,
-  "sha256": "8e15de161822336a1ac53de487d03c3ffc5f3b6d8401b556c88d02dbf52c5c03"
+  "size": 185527,
+  "sha256": "5398da6c1b0be10fbfe4e218f53111cec88bf61b985ec6ac66e0305ae2582e31"
  },
  {
   "path": "pages/thumb.html",
-  "size": 172995,
-  "sha256": "679a5e6fc29e3377a036d5c01829f6753d106a7a845d135ca2adfa2e6a53947e"
+  "size": 177736,
+  "sha256": "e98c9b208b251d2f095b516b9c0ff19a1f2bf27c4258f9605ff4a8e2c9d4aa36"
  },
  {
   "path": "thumb/jpg.epr",
@@ -76,7 +76,7 @@
  },
  {
   "path": "version.json",
-  "size": 176,
-  "sha256": "1000a89cacf0284458c7f70c2e5eb3fc2c19b52c215e965426b2237ee3e97a99"
+  "size": 183,
+  "sha256": "97b5f3ffd9081dc372a35f9e9bbf5712f0d80d8846cce83fa2ab29f45a75ee72"
  }
 ]
