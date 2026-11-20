@@ -568,7 +568,8 @@ class Proj {
 /* ---------------- 미드폼 분석 ---------------- */
 function analyzeMid(M) {
   const seqs = M.seqs(); let best = null, bestN = -1;
-  for (const s of seqs) { let n = 0; for (const t of s.vtracks) n += M.items(t).length; if (n > bestN) { bestN = n; best = s; } }
+  // 본편 = 영상(또는 중첩 시퀀스) 클립이 가장 많은 시퀀스. 클립 수만 세면 자막만 잔뜩 든 시퀀스(가져온 자막 XML)를 고를 수 있다
+  for (const s of seqs) { let n = 0, v = 0; for (const t of s.vtracks) for (const it of M.items(t)) { n++; const k = M.info(it).kind; if (k === 'video' || k === 'seq') v++; } const sc = v * 1e6 + n; if (sc > bestN) { bestN = sc; best = s; } }
   if (!best) throw new Error('미드폼 프로젝트에서 시퀀스를 찾지 못했습니다');
   const seq = best, V = seq.vtracks.map((t, i) => M.items(t).map(n => Object.assign(M.info(n), { track: i }))), A = seq.atracks.map((t, i) => M.items(t).map(n => Object.assign(M.info(n), { track: i })));
   const all = V.flat(); const seqEnd = Math.max(1, ...all.map(c => c.end));
@@ -1377,6 +1378,160 @@ function buildChapters(M, Tp, an, tpl, plan, opt) {
   return { bounds: B.map(b => ({ at: b.C, ext: b.d || 0, mute: b.mute })), subs: made.map(m => ({ start: m.a, end: m.z, num: m.num, title: m.title })), shift: acc, sub: nSub, trans: nTr, log };
 }
 
+/* ================= 자막 타이밍: 브루 XML의 시점을 실제 발화·컷에 맞춘다 =================
+   재료: 교정 XML(문구 기준) · .vrew(단어별 발화 시간, mp3 기준 초) · mp3 파형(쉼) · 프로젝트(컷 위치). 문구는 한 글자도 바꾸지 않는다. */
+const ST = { mp3Delay: 0.047, snapBack: 7, snapFwd: 2, lateSnap: 5, onsetWin: 0.15, longGap: 1.0, tail: 0.3, maxChars: 22, minDur: 0.9 };
+const CONNECTIVE = /^(결국|또|또한|다만|그래서|그리고|특히|그러면|사실|즉|근데|그런데|하지만|그러니까|그래도|이제|먼저|첫째|둘째|셋째|첫 번째|두 번째|세 번째|어|네|아)[,.]?$/;
+/* FCP7 XML(브루·프리미어 내보내기)의 텍스트 생성기 자막을 읽는다 */
+function parseCaptionXml(text) {
+  const doc = new DOMParser().parseFromString(String(text).replace(/^﻿/, ''), 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('XML을 읽지 못했습니다');
+  const seq = doc.getElementsByTagName('sequence')[0]; if (!seq) throw new Error('XML에 시퀀스가 없습니다');
+  const rate = ch(seq, 'rate'), tb = +txt(ch(rate, 'timebase')) || 30, ntsc = /true/i.test(txt(ch(rate, 'ntsc'))), fps = ntsc ? tb * 1000 / 1001 : tb;
+  const items = [...doc.getElementsByTagName('generatoritem')].filter(g => g.closest('video'));
+  const strOf = g => { for (const p of g.getElementsByTagName('parameter')) if (txt(ch(p, 'parameterid')) === 'str') return ch(p, 'value'); return null; };
+  const clips = items.map((g, i) => ({ i, node: g, text: (txt(strOf(g)) || txt(ch(g, 'name'))).replace(/\s+/g, ' ').trim(), start: +txt(ch(g, 'start')), end: +txt(ch(g, 'end')) })).filter(c => c.text && c.end > c.start).sort((a, b) => a.start - b.start);
+  if (!clips.length) throw new Error('XML에서 자막(텍스트 생성기)을 찾지 못했습니다');
+  return { doc, seq, seqName: txt(ch(seq, 'name')), tb, ntsc, fps, clips, track: clips[0].node.parentNode, strOf };
+}
+/* zip 안의 한 파일을 꺼낸다 (.vrew 는 zip). 압축 방식: 저장(0) 또는 deflate(8) */
+async function unzipEntry(bytes, re) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); let e = bytes.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--; if (e < 0) throw new Error('zip 파일이 아닙니다');
+  const u64 = o => dv.getUint32(o, true) + dv.getUint32(o + 4, true) * 4294967296, dec = new TextDecoder();
+  let p = dv.getUint32(e + 16, true), n = dv.getUint16(e + 10, true);
+  if (p === 0xFFFFFFFF || n === 0xFFFF) { const loc = e - 20; if (loc < 0 || dv.getUint32(loc, true) !== 0x07064b50) throw new Error('zip64 정보를 찾지 못했습니다'); const z = u64(loc + 8); n = u64(z + 32); p = u64(z + 48); } // 큰 zip(zip64)
+  for (let k = 0; k < n; k++) {
+    const method = dv.getUint16(p + 10, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), name = dec.decode(bytes.subarray(p + 46, p + 46 + nl));
+    let csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true), lo = dv.getUint32(p + 42, true);
+    for (let x = p + 46 + nl; x < p + 46 + nl + xl;) { const id = dv.getUint16(x, true), sz = dv.getUint16(x + 2, true); if (id === 1) { let q = x + 4; if (usize === 0xFFFFFFFF) { usize = u64(q); q += 8; } if (csize === 0xFFFFFFFF) { csize = u64(q); q += 8; } if (lo === 0xFFFFFFFF) lo = u64(q); } x += 4 + sz; }
+    if (re.test(name)) { const d0 = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true), raw = bytes.subarray(d0, d0 + csize); if (method === 0) return raw; return new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()); }
+    p += 46 + nl + xl + cl;
+  }
+  throw new Error('zip 안에서 ' + re + ' 를 찾지 못했습니다');
+}
+/* .vrew 안의 project.json: 단어(type 0)와 쉼(type 1), 시간은 mp3 기준 절대 초 */
+function parseVrew(json) {
+  const j = typeof json === 'string' ? JSON.parse(json) : json, cl = (j.transcript && j.transcript.clips) || []; const words = [], pauses = [];
+  for (const c of cl) for (const w of c.words || []) { const t0 = +w.originalStartTime, t1 = t0 + (+w.originalDuration || +w.duration || 0); if (!isFinite(t0)) continue; if (w.type === 0 && w.text) words.push({ t0, t1, text: String(w.text) }); else if (w.type === 1 && t1 > t0) pauses.push({ t0, t1 }); }
+  const media = (j.files || []).find(f => f.type === 'AVMedia' && f.sourceOrigin === 'USER');
+  return { words, pauses, duration: media && media.videoAudioMetaInfo ? +media.videoAudioMetaInfo.duration : 0, mediaName: media ? media.name : '' };
+}
+/* 10ms 에너지(dB)와 "말소리" 여부: 주변 2초의 잡음 바닥보다 10dB 높으면 말소리, 50ms로 매끈하게 */
+function energyEnvelope(pcm, sr) {
+  const hop = Math.round(sr / 100), n = Math.floor(pcm.length / hop), db = new Float32Array(n);
+  for (let k = 0; k < n; k++) { let s = 0; for (let i = k * hop, e = i + hop; i < e; i++) s += pcm[i] * pcm[i]; db[k] = 10 * Math.log10(s / hop + 1e-10); }
+  const voiced = new Uint8Array(n), W = 100;
+  for (let k = 0; k < n; k += 25) { const a = Math.max(0, k - W), b = Math.min(n, k + W), arr = Array.from(db.subarray(a, b)).sort((x, y) => x - y), floor = arr[Math.floor(arr.length * 0.1)]; for (let q = k; q < Math.min(n, k + 25); q++) voiced[q] = db[q] > floor + 10 ? 1 : 0; }
+  const sm = new Uint8Array(n); for (let k = 0; k < n; k++) { let c = 0; for (let q = Math.max(0, k - 2); q <= Math.min(n - 1, k + 2); q++) c += voiced[q]; sm[k] = c >= 3 ? 1 : 0; }
+  return { db, voiced: sm, step: 0.01, dur: n / 100 };
+}
+const vAt = (env, t) => { const k = Math.round(t / env.step); return k >= 0 && k < env.voiced.length ? env.voiced[k] : 0; };
+/* 말 시작 다듬기: 브루 시작점 ±win 안에서 "무음→말소리"로 바뀌는 가장 가까운 지점 */
+function onsetNear(env, t, win) { let best = null; for (let d = 0; d <= win + 1e-9; d += env.step) for (const s of [t - d, t + d]) { if (vAt(env, s) && !vAt(env, s - env.step)) { if (best == null) best = s; } } return best; }
+/* mp3와 시퀀스의 시간 차이: 컷마다 소리 크기가 확 바뀌는 지점을 맞춰 본다. 시작·중간·끝 세 묶음이 같은 값일 때만 믿는다 */
+function estimateOffset(env, cuts, fps) {
+  const score = (cs, d) => { let s = 0; for (const c of cs) { const k = Math.round((c + d) / env.step); if (k < 2 || k + 2 >= env.db.length) continue; s += Math.abs((env.db[k] + env.db[k + 1]) - (env.db[k - 1] + env.db[k - 2])); } return s; };
+  // 컷마다 가장 잘 맞는 차이를 하나씩 뽑게 하고(투표), 가장 많이 나온 값을 쓴다. 한두 컷의 엉뚱한 값에 끌려가지 않는다
+  const vote = c => { let bd = 0, bs = -1; for (let d = -0.25; d <= 0.25 + 1e-9; d += 0.01) { const s = score([c], d); if (s > bs) { bs = s; bd = d; } } return Math.round(bd * 100); };
+  const mode = cs => { const h = new Map(); for (const c of cs) { const v = vote(c); for (const x of [v - 1, v, v + 1]) h.set(x, (h.get(x) || 0) + (x === v ? 2 : 1)); } let bv = 0, bn = -1; for (const [v, n] of h) if (n > bn) { bn = n; bv = v; } const near = cs.filter(c => Math.abs(vote(c) - bv) <= 1).length; return { d: bv / 100, share: near / cs.length }; };
+  if (cuts.length < 9) return { offset: 0, parts: [], ok: false, why: '컷이 적어 재지 못함' };
+  const k = Math.floor(cuts.length / 3), P = [mode(cuts.slice(0, k)), mode(cuts.slice(k, 2 * k)), mode(cuts.slice(2 * k))], all = mode(cuts), parts = P.map(p => p.d);
+  // 프리미어에서 뽑은 MP3는 인코더 때문에 늘 47ms 늦다(지난 작업 9건 모두 같은 값). 재 본 값이 이와 같거나, 잴 수 없으면 47ms 를 쓴다.
+  // 다른 값이 시작·중간·끝 세 묶음에서 모두 같게 나올 때만 그 값을 쓴다 (한두 군데 차이로 전체를 옮기지 않는다)
+  const D = ST.mp3Delay, med = parts.slice().sort((a, b) => a - b)[1], agreeMed = P.filter(p => Math.abs(p.d - med) <= 1.5 / fps).length, nearD = cuts.filter(c => Math.abs(vote(c) / 100 - D) <= 0.015).length / cuts.length;
+  const other = agreeMed === 3 && Math.abs(med - D) > 1.5 / fps && all.share >= 0.3 && nearD < 0.1, offset = other ? med : D; // 47ms 쪽에 표가 조금이라도(10% 이상) 모이면 47ms
+  return { offset, parts, all: all.d, share: Math.round(all.share * 100), nearDefault: Math.round(nearD * 100), ok: true, why: other ? `세 묶음 모두 ${Math.round(med * 1000)}ms 로 같아 그 값을 씀` : Math.abs(med - D) <= 1.5 / fps ? `재 본 값이 MP3 기본 지연(${Math.round(D * 1000)}ms)과 같음` : `재 본 값(${Math.round(med * 1000)}ms)이 확실하지 않아 MP3 기본 지연(${Math.round(D * 1000)}ms)을 씀` };
+}
+/* 교정 문구의 어절마다 발화 시간을 붙인다. 자막 i 의 시간 범위 안 브루 단어와 글자 단위로 맞춘다 (교정으로 바뀐 글자는 앞뒤에서 보간) */
+function alignEojeol(cap, vrew, offset) {
+  const toS = f => f / cap.fps, ws = vrew.words.map(w => ({ t0: w.t0 - offset, t1: w.t1 - offset, text: w.text })), out = [];
+  let wi = 0;
+  cap.clips.forEach((c, ci) => {
+    const a = toS(c.start), b = toS(c.end), cand = []; while (wi < ws.length && (ws[wi].t0 + ws[wi].t1) / 2 < a - 0.05) wi++;
+    for (let k = wi; k < ws.length && (ws[k].t0 + ws[k].t1) / 2 < b + 0.05; k++) cand.push(ws[k]);
+    const ej = c.text.split(' '), G = [], Gi = []; ej.forEach((e, k) => { for (const chh of e.replace(/[^가-힣A-Za-z0-9]/g, '')) { G.push(chh); Gi.push(k); } });
+    const A = [], Ai = []; cand.forEach((w, k) => { for (const chh of w.text.replace(/[^가-힣A-Za-z0-9]/g, '')) { A.push(chh); Ai.push(k); } });
+    const al = G.length && A.length ? lcsAlign(G, A) : { to: [] }, t = ej.map(() => ({ t0: null, t1: null, n: 0 }));
+    for (let g = 0; g < G.length; g++) { const j = al.to[g]; if (j == null || j < 0) continue; const w = cand[Ai[j]], x = t[Gi[g]]; x.n++; if (x.t0 == null || w.t0 < x.t0) x.t0 = w.t0; if (x.t1 == null || w.t1 > x.t1) x.t1 = w.t1; }
+    ej.forEach((e, k) => out.push({ text: e, clip: ci, t0: t[k].t0, t1: t[k].t1, ok: t[k].n > 0 }));
+  });
+  // 못 맞춘 어절: 앞뒤 맞춘 어절 사이에 글자 수 비율로 놓는다
+  for (let i = 0; i < out.length; i++) if (!out[i].ok) {
+    let p = i - 1; while (p >= 0 && !out[p].ok) p--; let q = i + 1; while (q < out.length && !out[q].ok) q++;
+    const L = p >= 0 ? out[p].t1 : toS(cap.clips[out[i].clip].start), R = q < out.length ? out[q].t0 : toS(cap.clips[out[i].clip].end), span = out.slice(p + 1, q), tot = span.reduce((s, x) => s + x.text.length, 0) || 1; let acc = L;
+    for (const x of span) { const d = (R - L) * x.text.length / tot; x.t0 = acc; x.t1 = acc + d; acc += d; }
+    i = q - 1;
+  }
+  return out;
+}
+/* 규칙 나누기: 원래 자막 단위를 기본으로, 짧은 조각·단독 연결어는 뒤와 합치고, 문장 끝 뒤에 붙은 다음 문장 첫말은 다음 자막으로 옮긴다. 결과 = 어절 범위 [a,b] 목록 */
+function ruleSegments(ej) {
+  const segs = []; let a = 0;
+  for (let i = 1; i <= ej.length; i++) if (i === ej.length || ej[i].clip !== ej[i - 1].clip) { segs.push([a, i - 1]); a = i; }
+  const txtOf = s => ej.slice(s[0], s[1] + 1).map(x => x.text).join(' '), dur = s => ej[s[1]].t1 - ej[s[0]].t0, end = /(다|요|죠|까|네요|군요)[.?!]?$/;
+  // 문장 끝 뒤에 붙은 짧은 첫말("않습니다 즉,")은 다음 자막 앞으로
+  for (let k = 0; k + 1 < segs.length; k++) { const s = segs[k]; if (s[1] - s[0] < 1) continue; const lastW = ej[s[1]].text, prevW = ej[s[1] - 1].text; if (end.test(prevW) && !end.test(lastW) && [...lastW].length <= 4) { s[1]--; segs[k + 1][0]--; } }
+  // 단독 연결어·아주 짧은 조각은 뒤와 합친다 (합쳐서 너무 길면 두고)
+  for (let k = 0; k + 1 < segs.length;) { const s = segs[k], n = segs[k + 1], t = txtOf(s); if ((CONNECTIVE.test(t) || dur(s) < ST.minDur) && !end.test(t) && [...(t + ' ' + txtOf(n))].length <= ST.maxChars) { n[0] = s[0]; segs.splice(k, 1); } else k++; }
+  return segs;
+}
+/* 나누기 검사: 모든 어절을 순서대로 빠짐없이 덮어야 한다 */
+function checkSegments(segs, n) { let next = 0; for (const s of segs) { if (!Array.isArray(s) || s[0] !== next || s[1] < s[0] || s[1] >= n) return false; next = s[1] + 1; } return next === n; }
+/* 시점 정하기: 말 시작(브루 + 파형) → 컷 맞추기 → 끝은 다음 자막까지(긴 무음이면 끊기) → 같은 문구 병합 → 정수 프레임 */
+function timeSegments(o) {
+  const { ej, segs, env, cuts, fps, endF } = o, F = t => Math.round(t * fps), cutF = [...new Set(cuts.map(F))].sort((a, b) => a - b);
+  // 시작은 브루 단어 시작을 그대로 쓴다. 그 자리부터 0.15초 넘게 소리가 없다가 말이 시작되면(뚜렷한 쉼) 그 말 시작으로 옮긴다
+  const out = segs.map(([a, b]) => { const t0 = ej[a].t0; let sp0 = t0, why = '브루', t1 = ej[b].t1;
+    if (env) { let q = t0; while (q < t0 + 0.6 && !vAt(env, q)) q += env.step; if (q - t0 >= 0.15 && q < t0 + 0.6) { sp0 = q; why = '쉼'; } else if (vAt(env, t0) && !vAt(env, t0 - 0.05)) why = '브루=쉼';
+      let e = t1; while (e > sp0 && !vAt(env, e)) e -= env.step; t1 = Math.max(sp0 + 0.1, Math.min(t1, e + 0.05)); }
+    return { a, b, text: ej.slice(a, b + 1).map(x => x.text).join(' '), sp0, sp1: t1, why, ok: ej.slice(a, b + 1).every(x => x.ok) }; });
+  let prevEnd = -1;
+  out.forEach((s, k) => {
+    let f = F(s.sp0); const prev = out[k - 1];
+    const back = cutF.filter(c => c <= f && c >= f - ST.snapBack).pop(), fwd = cutF.find(c => c > f && c <= f + ST.snapFwd), late = cutF.find(c => c > f && c <= f + ST.lateSnap);
+    if (fwd != null) { s.snap = `컷 ${f}→${fwd}`; f = fwd; }
+    else if (back != null && (!prev || F(prev.sp1) <= back)) { s.snap = `컷 ${f}→${back}`; f = back; }
+    else if (late != null && env && ![...Array(late - f).keys()].some(q => vAt(env, (f + q) / fps))) { s.snap = `컷 ${f}→${late} (무음)`; f = late; }
+    if (k === 0 && f < F(1.0)) { f = 0; s.snap = '영상 시작'; }
+    s.start = Math.max(f, prevEnd + 1, k ? out[k - 1].start + 1 : 0); prevEnd = s.start;
+  });
+  out.forEach((s, k) => { const n = out[k + 1];
+    if (!n) { s.end = Math.min(endF, Math.max(s.start + 1, endF - F(s.sp1) < F(2) ? endF : F(s.sp1 + ST.tail))); return; }
+    if (n.sp0 - s.sp1 >= ST.longGap) { const c = cutF.find(c => c > F(s.sp1) && c < n.start); s.end = Math.max(s.start + 1, Math.min(n.start, c != null ? c : F(s.sp1 + ST.tail))); s.gap = true; } else s.end = n.start; });
+  for (let k = out.length - 1; k > 0; k--) if (out[k].text === out[k - 1].text && out[k - 1].end === out[k].start) { out[k - 1].end = out[k].end; out[k - 1].b = out[k].b; out.splice(k, 1); }
+  return out;
+}
+/* 프로젝트의 컷 위치(초): 촬영본 클립이 끝나는 곳에서 다른 촬영본 클립이 바로 시작하는 지점 */
+function cutTimes(P) {
+  const an = analyzeMid(P), fr = an.seq.frame, foot = an.footage.filter(c => !isTplClipName(c.name)), st = foot.map(c => c.start).sort((a, b) => a - b), out = new Set();
+  for (const c of foot) { if (st.some(s => Math.abs(s - c.end) < fr / 2)) out.add(Math.round(c.end / fr) * fr); }
+  return [...out].map(t => t / TICKS).sort((a, b) => a - b);
+}
+/* 전체 순서: 시간 차이 재기 → 어절 시간 → 나누기(주어진 것이 맞으면 그것, 아니면 규칙) → 시점 */
+function runTiming(o) {
+  const { cap, vrew, env, cuts } = o, bodyEnd = Math.min(o.audioDur || Infinity, vrew.duration || Infinity, cap.clips[cap.clips.length - 1].end / cap.fps + 0.5);
+  const off = estimateOffset(env, cuts.filter(c => c < bodyEnd), cap.fps), sh = Math.round(off.offset / env.step), v = new Uint8Array(env.voiced.length);
+  for (let k = 0; k < v.length; k++) { const q = k + sh; v[k] = q >= 0 && q < v.length ? env.voiced[q] : 0; } // 시퀀스 시간 기준 말소리 여부
+  const envSeq = { step: env.step, db: env.db, voiced: v }, ej = alignEojeol(cap, vrew, off.offset);
+  const given = o.segs && checkSegments(o.segs, ej.length), segs = given ? o.segs : ruleSegments(ej);
+  const out = timeSegments({ ej, segs, env: envSeq, cuts: cuts.filter(c => c < bodyEnd + 1), fps: cap.fps, endF: Math.round(bodyEnd * cap.fps) });
+  return { cap, offset: off, ej, segs, out, bodyEnd, usedGiven: !!given, unaligned: ej.filter(x => !x.ok).length };
+}
+/* 결과 XML: 교정 XML을 그대로 두고 자막 클립만 새로 만든다 (스타일은 첫 자막 견본 복사) */
+function writeCaptionXml(cap, segs, seqName) {
+  const doc = cap.doc.cloneNode(true), parsed = parseCaptionXml(new XMLSerializer().serializeToString(doc)), tpl = parsed.clips[0].node, track = parsed.track;
+  for (const c of parsed.clips) c.node.parentNode.removeChild(c.node);
+  for (const s of segs) {
+    const g = tpl.cloneNode(true), set = (tag, v) => { const e = ch(g, tag); if (e) e.textContent = String(v); };
+    set('name', s.text); set('start', s.start); set('end', s.end); set('in', s.start); set('out', s.end); const v = parsed.strOf(g); if (v) v.textContent = s.text;
+    track.appendChild(g); track.appendChild(parsed.doc.createTextNode('\n'));
+  }
+  const nm = ch(parsed.seq, 'name'); if (nm && seqName) nm.textContent = seqName;
+  return '﻿<?xml version="1.0" encoding="utf-8"?>\n' + new XMLSerializer().serializeToString(parsed.doc.documentElement);
+}
+const tcOf = (f, fps, tb) => { const fr = Math.round(f) % tb, s = Math.floor(Math.round(f) / tb), p = n => String(n).padStart(2, '0'); return `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}:${p(fr)}`; };
+function srtOf(segs, fps) { const t = f => { const ms = Math.round(f / fps * 1000), p = (n, w) => String(n).padStart(w || 2, '0'); return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`; }; return segs.map((s, i) => `${i + 1}\r\n${t(s.start)} --> ${t(s.end)}\r\n${s.text}\r\n`).join('\r\n'); }
+
 /* ================= 편집기 공통: 차례 안내 줄 =================
    fn() → { steps: [{ icon, name, done, target: 짚어 줄 요소 id, text: 할 일(HTML) }], done: 다 끝났을 때 문구(HTML) }
    끝난 단계 ✅, 지금 단계 👉 + 그 요소에 깜빡이는 테두리. 단계를 누르면 그 칸으로 간다. 상태가 바뀌면 저절로 다시 그린다(0.5초마다 확인). */
@@ -1411,7 +1566,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, showGuide, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
+const Engine = { TICKS, showGuide, ST, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
