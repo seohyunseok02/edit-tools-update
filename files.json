@@ -1,48 +1,48 @@
 [
  {
   "path": "hub.html",
-  "size": 5427,
-  "sha256": "5674c922e01c6a30edaeb9b2acfcad2b0c721a23826d22de98fe2440324d44f2"
+  "size": 5573,
+  "sha256": "213aa492a4e79505e181d303e2eb9cb6269ab9670f69ba8e75559739d9e51117"
  },
  {
   "path": "pages/extract.html",
-  "size": 175477,
-  "sha256": "151a0b5dc964899c6f52583cb98d396e54a795977869e52cd915686f30960f2e"
+  "size": 181052,
+  "sha256": "493d43219c3087ef902a490893bd864b385800bb1ec4f2443e5300625b27b8d4"
  },
  {
   "path": "pages/fx.html",
-  "size": 220140,
-  "sha256": "16950ba5d0d39fc42f99b5e0bb5f3a2da037dd7c03869f3b82222b611bb63842"
+  "size": 227081,
+  "sha256": "c9aa9486a63d47fa688921b0be5816f955628f1c6533fc7db8f27fab06e8dd5b"
  },
  {
   "path": "pages/highlight.html",
-  "size": 180290,
-  "sha256": "a566af4d10ba03a09d4a756b41c4b30ccf396905331828026dbac45e735ebbae"
+  "size": 185865,
+  "sha256": "4e31deacaa86217696868f027ded05e2b00cebdb6c2857c0dce3aa986171d31a"
  },
  {
   "path": "pages/shorts.html",
-  "size": 211935,
-  "sha256": "6e89f2c406cc00c6fda293a521f7ff574572de41f305967e51ad64cc08286316"
+  "size": 217510,
+  "sha256": "f63fff777205fcdb8412bb40e6bae79fd99d43d85305a070f373957ce7125246"
  },
  {
   "path": "pages/spell.html",
-  "size": 181928,
-  "sha256": "fc654e49fba926a50c5a00a319851c234009b960a579e4b1967e4672abf4c0f3"
+  "size": 187503,
+  "sha256": "ee7289c478e39ec8dd767071c53238a92a566745812f5a27f1aaebb241dc0266"
  },
  {
   "path": "pages/subtime.html",
-  "size": 180008,
-  "sha256": "c66f3b207721e9fcd396d53c9ca37da347b8aa9b21f04c8393fb558552035115"
+  "size": 185583,
+  "sha256": "69e19cb6c163f249c45bc36091399ae7ce9e8a906b9656516655f866c4fec3b0"
  },
  {
   "path": "pages/subtitle.html",
-  "size": 185527,
-  "sha256": "5398da6c1b0be10fbfe4e218f53111cec88bf61b985ec6ac66e0305ae2582e31"
+  "size": 191102,
+  "sha256": "470cd23d3bb05b59751101b82d159e59d720e78cbfaf1a79b2a2640435e4c7c3"
  },
  {
   "path": "pages/thumb.html",
-  "size": 177736,
-  "sha256": "e98c9b208b251d2f095b516b9c0ff19a1f2bf27c4258f9605ff4a8e2c9d4aa36"
+  "size": 183311,
+  "sha256": "08b4da85edf46a1d98e6c85a495013fce41186615461fb9eff679fce52c33465"
  },
  {
   "path": "thumb/jpg.epr",
@@ -76,7 +76,7 @@
  },
  {
   "path": "version.json",
-  "size": 183,
-  "sha256": "97b5f3ffd9081dc372a35f9e9bbf5712f0d80d8846cce83fa2ab29f45a75ee72"
+  "size": 334,
+  "sha256": "8a213c478775793be315fa2203caeab8016e4d425a6808baf026147ec2b40cab"
  }
 ]

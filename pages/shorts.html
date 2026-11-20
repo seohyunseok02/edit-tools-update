@@ -946,8 +946,11 @@ function analyzeTemplateSeq(Tp, seq) {
     }
     used.add(c.id);
     const d = { name, base: name, nameLayer, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[slots.main].font };
-    const fol = texts.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS && x.layers.some(L => isPlaceholder(oneLine(L.text))));
-    if (fol) { const fm = fol.layers.findIndex(L => isPlaceholder(oneLine(L.text))); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!d.name) d.name = d.base = oneLine(fol.layers[fm].text).replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(); if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
+    // 둘째 줄의 본문 자리: 견본 문구("…자막입니다") 레이어. 첫 줄이 "내용이 많이 들어가는"처럼 두 줄의 첫 줄인데 둘째 줄 견본이 "분노! 화남!"처럼 자막이란 말이 없으면(서울아산), 같은 이름표를 단 클립의 보이는 글자 레이어
+    const leadTwo = /들어가는|담을 수|들어갑니다/.test(oneLine(c.layers[slots.main].text)), nameT = nameLayer >= 0 ? oneLine(c.layers[nameLayer].text) : '';
+    const mainOf = x => { const p = x.layers.findIndex(L => isPlaceholder(oneLine(L.text))); if (p >= 0 || !leadTwo || !nameT || !x.layers.some(L => L.off && oneLine(L.text) === nameT)) return p; let b = -1; x.layers.forEach((L, i) => { if (!L.off && L.param && oneLine(L.text) && oneLine(L.text) !== nameT && (b < 0 || oneLine(L.text).length > oneLine(x.layers[b].text).length)) b = i; }); return b; };
+    const fol = texts.find(x => x !== c && !used.has(x.id) && x.track !== c.track && x.start > c.start + 0.3 * TICKS && x.start < c.end && Math.abs(x.end - c.end) < 0.3 * TICKS && mainOf(x) >= 0);
+    if (fol) { const fm = mainOf(fol); used.add(fol.id); d.clips.push({ clip: fol, offset: fol.start - c.start, slots: { main2: fm } }); d.two = true; if (!d.name) d.name = d.base = oneLine(fol.layers[fm].text).replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(); if (!/두줄|2줄|두 줄/.test(d.name)) d.name += ' (두 줄)'; }
     if (!d.name) d.name = d.base = '포인트';
     d.sfx = A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name }));
     designs.push(d);
@@ -965,6 +968,8 @@ function analyzeTemplateSeq(Tp, seq) {
     const hint = ls[mi].replace(/[“”"]/g, '').replace(/\s*자막.*$/, '').trim(), name = ni >= 0 ? ls[ni] : hint && [...hint].length <= 14 ? hint : '한 줄 ' + (++guess); used.add(c.id); // 이름이 없으면 견본 문구(예: "어필포인트 자막입니다" → "어필포인트")를 이름으로
     designs.push({ name, base: name, nameLayer: ni, clips: [{ clip: c, offset: 0, slots }], dur: c.end - c.start, two: false, font: c.layers[mi].font, guessed: true, sfx: A.filter(a => a.start >= c.start - 0.05 * TICKS && a.start < c.end).map(a => ({ clip: a, offset: Math.max(0, a.start - c.start), name: a.name })) });
   }
+  // 이름표는 "일반 1"로 같고 견본 문구만 "공중형 자막"인 디자인(화면 위쪽에 뜨는 것, 디렉터의원)은 이름에 표시해 둔다. 안 그러면 번호 형제로 보여 고르게 돌려 쓰다가 자막이 공중에 뜬다.
+  for (const d of designs) { const c0 = d.clips[0]; if (!/공중/.test(d.name) && c0.clip.layers.some(L => /공중형/.test(oneLine(L.text)))) d.name = d.name + ' (공중형)'; }
   const count = {}; for (const d of designs) count[d.name] = (count[d.name] || 0) + 1;
   const seen = {}; for (const d of designs) if (count[d.name] > 1) { seen[d.name] = (seen[d.name] || 0) + 1; d.name = d.name + ' ' + seen[d.name]; }
   if (!designs.length) throw new Error('템플릿에서 효과자막 디자인을 찾지 못했습니다. "첨자 자막" 줄이 있는 견본이 필요합니다.');
@@ -1022,8 +1027,16 @@ function splitSegs(text, parts, auto) {
     return txt.map((t, i) => t ? (txt.slice(i + 1).some(Boolean) ? t + ' ' : t) : ' ');
   }
   if (s.length > k) s = s.slice(0, k - 1).concat(s.slice(k - 1).join(''));
-  while (s.length < k) s.push(' ');
-  return s.map(x => x || ' ');
+  // "색 글자 | 나머지"처럼 | 양쪽에 띄어쓰기가 있으면 두 칸이 되므로, 조각마다 다듬고 사이에 한 칸만 둔다
+  s = s.map(x => x.trim()); while (s.length < k) s.push('');
+  return s.map((t, i) => t ? (s.slice(i + 1).some(Boolean) ? t + ' ' : t) : ' ');
+}
+/* 두 줄 디자인인데 둘째 줄이 비었을 때: 문구를 가운데에 가장 가까운 띄어쓰기에서 둘로 나눈다. 한 낱말이면 null */
+function splitTwo(s) {
+  const w = String(s || '').trim().split(/\s+/).filter(Boolean); if (w.length < 2) return null;
+  const tot = [...w.join(' ')].length; let best = 1, bd = Infinity, acc = -1;
+  for (let i = 1; i < w.length; i++) { acc += [...w[i - 1]].length + 1; const d = Math.abs(acc - (tot - acc - 1)); if (d < bd) { bd = d; best = i; } }
+  return [w.slice(0, best).join(' '), w.slice(best).join(' ')];
 }
 
 /* 컷편집본(M)에 효과자막을 넣는다. items = [{t0,t1,design,small,main,main2,pos}] (틱, 디자인 이름)
@@ -1050,9 +1063,10 @@ function buildFx(M, Tp, an, cat, items, opt) {
   else if (!sTrack) log.push(`빈 오디오 트랙이 없어 효과음은 짧은 소리만 있던 트랙(${shortTracks.map(x => 'A' + (x.i + 1)).join(', ')})의 빈 자리에 넣었습니다.`);
   const list = items.map(x => ({ ...x, t0: snap(toCut(x.t0)), t1: snap(toCut(x.t1)) })).filter(x => x.t1 - x.t0 >= fr * 5).sort((a, b) => a.t0 - b.t0);
   for (let i = 0; i + 1 < list.length; i++) if (list[i].t1 > list[i + 1].t0) list[i].t1 = list[i + 1].t0;
-  const bump = opt.bump == null ? 10 : +opt.bump, bumped = new Set(); let n = 0, muted = 0;
+  const bump = opt.bump == null ? 10 : +opt.bump, bumped = new Set(), hideSpans = []; let n = 0, muted = 0;
   for (const it of list) {
     const d = cat.designs.find(x => x.name === it.design) || cat.designs[0]; if (it.t1 - it.t0 < fr * 5) continue;
+    if (d.two && !(it.main2 || '').trim()) { const sp = splitTwo(it.main); if (sp) [it.main, it.main2] = sp; } // 두 줄 디자인에 한 줄만 오면 첫 줄 클립만 들어가 반쪽이 된다
     const useTwo = d.two && (it.main2 || '').trim(); let folStart = null, baseTrack = -1;
     d.clips.forEach((dc, k) => {
       if (k > 0 && !useTwo) return;
@@ -1078,7 +1092,8 @@ function buildFx(M, Tp, an, cat, items, opt) {
       const fo = d.two ? d.clips[1].offset : Infinity;
       for (const s of d.sfx) { const late = s.offset >= fo - 0.1 * TICKS; if (late && !useTwo) continue; const st = late ? snap(folStart + (s.offset - fo)) : snap(it.t0 + s.offset); if (st < it.t1) sfxPlan.push({ s, st, en: st + (s.clip.end - s.clip.start) }); }
     }
-    for (const c of an.captions) { const a = Math.max(c.start, it.t0), b = Math.min(c.end, it.t1); if (b - a >= (c.end - c.start) * 0.5) { muteClip(M, c.node); muted++; } }
+    hideSpans.push([it.t0, it.t1]);
+    for (const c of an.captions) { const a = Math.max(c.start, it.t0), b = Math.min(c.end, it.t1); if (b - a >= (c.end - c.start) * 0.5) { muteClip(M, c.node); muted++; hideSpans.push([c.start, c.end]); } }
     // 효과자막이 떠 있는 컷은 영상을 조금 키운다
     if (bump) for (const c of an.footage) { if (bumped.has(c.id)) continue; const a = Math.max(c.start, it.t0), b = Math.min(c.end, it.t1); if (b - a < (c.end - c.start) * 0.5) continue; const m = M.ensureMotion(c.node); if (m) { addToParam(m.scale, bump); bumped.add(c.id); } }
     n++;
@@ -1094,7 +1109,45 @@ function buildFx(M, Tp, an, cat, items, opt) {
   if (blocked) log.push(`효과음 ${blocked}개는 그 자리에 이미 다른 소리가 있어 넣지 않았습니다.`);
   for (const x of shortTracks) M.addToTrack(x.t, x.add);
   adds.forEach((arr, i) => M.addToTrack(tracks[i], arr)); if (sTrack) M.addToTrack(sTrack.t, addS); if (sTrack2) M.addToTrack(sTrack2.t, addS2);
-  return { count: n, muted, sfx: addS.length + addS2.length + shortTracks.reduce((a, x) => a + x.add.length, 0), tracks: [...usedTracks].sort((a, b) => a - b).map(i => i + 1), bumped: bumped.size, log };
+  const bars = captionBars(M, an), barsOff = bars.length && hideSpans.length ? hideBars(M, bars, hideSpans, fr) : 0;
+  if (barsOff) log.push(`말자막 바(V${bars.map(b => b.i + 1).join(', V')}) ${barsOff}곳을 효과자막 구간에서 꺼 두었습니다.`);
+  return { count: n, muted, barsOff, sfx: addS.length + addS2.length + shortTracks.reduce((a, x) => a + x.add.length, 0), tracks: [...usedTracks].sort((a, b) => a - b).map(i => i + 1), bumped: bumped.size, log };
+}
+/* 말자막 바(말자막 밑에 까는 그림) 트랙 찾기. 트랙 번호는 사람마다 달라서 내용으로 찾는다:
+   그림만 있고, 이름이 말자막·자막바 같거나(말자막과 반 이상 겹침), 말자막 바로 아래 트랙에서 말자막과 거의 늘 함께 떠 있으면 바로 본다. 로고 트랙은 뺀다. */
+function captionBars(M, an) {
+  const caps = an.captions; if (!caps.length) return [];
+  const cover = cl => { let s = 0, tot = 0; for (const c of cl) { tot += c.end - c.start; for (const k of caps) { const a = Math.max(c.start, k.start), b = Math.min(c.end, k.end); if (b > a) s += b - a; } } return tot ? s / tot : 0; };
+  const out = [];
+  an.seq.vtracks.forEach((t, i) => {
+    if (i === an.capTrack || an.camTracks.includes(i)) return;
+    const all = M.items(t).map(n => M.info(n)), img = all.filter(c => c.kind === 'image'); if (!all.length || img.length < all.length * 0.7) return; // 바 사이에 글자 몇 개가 섞여 있어도 된다. 그 글자는 건드리지 않는다
+    if (img.some(c => /로고|logo/i.test(c.name + ' ' + baseName(c.media)))) return;
+    const named = img.filter(c => /말자막|자막\s*_?바|자막_?bar|sub_?bar|caption/i.test(c.name + ' ' + baseName(c.media)));
+    if (named.length >= img.length * 0.5 && cover(named) >= 0.5) out.push({ i, t, clips: named });
+    else if (i === an.capTrack - 1 && img.length === all.length && cover(img) >= 0.8) out.push({ i, t, clips: img });
+  });
+  return out;
+}
+/* 효과자막이 떠 있는 구간(spans)에서 말자막 바를 잘라 그 조각만 끈다 (말자막을 끄는 것과 같은 방식) */
+function hideBars(M, bars, spans, fr) {
+  const sp = spans.slice().sort((a, b) => a[0] - b[0]), merged = [];
+  for (const s of sp) { const l = merged[merged.length - 1]; if (l && s[0] - l[1] <= fr * 3) l[1] = Math.max(l[1], s[1]); else merged.push([s[0], s[1]]); } // 몇 프레임 틈은 바가 깜빡이지 않게 이어 끈다
+  let n = 0;
+  for (const b of bars) {
+    const add = [];
+    for (const c of b.clips) {
+      const hit = merged.filter(s => s[0] < c.end && s[1] > c.start); if (!hit.length) continue;
+      const cut = new Set([c.start, c.end]);
+      for (const s of hit) for (const x of s) if (x > c.start && x < c.end) cut.add(x - c.start < fr * 3 ? c.start : c.end - x < fr * 3 ? c.end : x); // 끝에 남는 몇 프레임 조각은 만들지 않는다
+      const pts = [...cut].sort((x, y) => x - y), pcs = [];
+      for (let k = 0; k + 1 < pts.length; k++) { const a = pts[k], e = pts[k + 1], m = (a + e) / 2; pcs.push({ a, e, off: hit.some(s => m > s[0] && m < s[1]) }); }
+      const nodes = pcs.map((p, k) => k === 0 ? c.node : M.cloneClip(c.node)); // 원본을 바꾸기 전에 복제
+      pcs.forEach((p, k) => { M.setTimes(nodes[k], p.a, p.e, c.inPoint + (p.a - c.start)); if (p.off) { muteClip(M, nodes[k]); n++; } if (k) add.push(nodes[k]); });
+    }
+    if (add.length) M.addToTrack(b.t, add);
+  }
+  return n;
 }
 /* 숫자 파라미터(크기 등)에 값을 더한다. 키프레임이 있으면 모두에 더한다. */
 function addToParam(p, delta) {
@@ -1607,7 +1660,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
+const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
