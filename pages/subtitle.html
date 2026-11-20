@@ -1380,7 +1380,7 @@ function buildChapters(M, Tp, an, tpl, plan, opt) {
 
 /* ================= 자막 타이밍: 브루 XML의 시점을 실제 발화·컷에 맞춘다 =================
    재료: 교정 XML(문구 기준) · .vrew(단어별 발화 시간, mp3 기준 초) · mp3 파형(쉼) · 프로젝트(컷 위치). 문구는 한 글자도 바꾸지 않는다. */
-const ST = { mp3Delay: 0.047, snapBack: 7, snapFwd: 2, lateSnap: 5, onsetWin: 0.15, longGap: 1.0, tail: 0.3, maxChars: 22, minDur: 0.9 };
+const ST = { mp3Delay: 0.047, snapBack: 7, snapFwd: 2, lateSnap: 5, onsetWin: 0.15, longGap: 2.5, tail: 0.3, maxChars: 22, minDur: 0.9 };
 const CONNECTIVE = /^(결국|또|또한|다만|그래서|그리고|특히|그러면|사실|즉|근데|그런데|하지만|그러니까|그래도|이제|먼저|첫째|둘째|셋째|첫 번째|두 번째|세 번째|어|네|아)[,.]?$/;
 /* FCP7 XML(브루·프리미어 내보내기)의 텍스트 생성기 자막을 읽는다 */
 function parseCaptionXml(text) {
@@ -1468,11 +1468,31 @@ function alignEojeol(cap, vrew, offset) {
 function ruleSegments(ej) {
   const segs = []; let a = 0;
   for (let i = 1; i <= ej.length; i++) if (i === ej.length || ej[i].clip !== ej[i - 1].clip) { segs.push([a, i - 1]); a = i; }
-  const txtOf = s => ej.slice(s[0], s[1] + 1).map(x => x.text).join(' '), dur = s => ej[s[1]].t1 - ej[s[0]].t0, end = /(다|요|죠|까|네요|군요)[.?!]?$/;
+  const txtOf = s => ej.slice(s[0], s[1] + 1).map(x => x.text).join(' '), dur = s => ej[s[1]].t1 - ej[s[0]].t0, end = /(니다|요|죠|까|[었았였겠는]다|한다|된다|이다|있다|없다|란다|거든|잖아|말자|하자|보자)[.?!]?$|[.?!]$/, endW = w => end.test(w) || (/다[.?!]?$/.test(w) && [...w].length >= 2 && (j => j >= 0 && [20, 4].includes(j % 28))([...w.replace(/[.?!]$/, '')].slice(-2)[0].charCodeAt(0) - 0xAC00)); // "하다 보면"의 "하다"는 문장 끝이 아니다
   // 문장 끝 뒤에 붙은 짧은 첫말("않습니다 즉,")은 다음 자막 앞으로
-  for (let k = 0; k + 1 < segs.length; k++) { const s = segs[k]; if (s[1] - s[0] < 1) continue; const lastW = ej[s[1]].text, prevW = ej[s[1] - 1].text; if (end.test(prevW) && !end.test(lastW) && [...lastW].length <= 4) { s[1]--; segs[k + 1][0]--; } }
+  for (let k = 0; k + 1 < segs.length; k++) { const s = segs[k]; if (s[1] - s[0] < 1) continue; const lastW = ej[s[1]].text, prevW = ej[s[1] - 1].text; if (endW(prevW) && !endW(lastW) && [...lastW].length <= 4) { s[1]--; segs[k + 1][0]--; } }
+  // 말의 끝이 다음 자막으로 넘어가지 않게 경계를 한 어절씩 고친다 (사용자가 직접 고친 24곳에서 뽑은 규칙)
+  const len = (a, b) => [...ej.slice(a, b + 1).map(x => x.text).join(' ')].length, gapAfter = i => i + 1 < ej.length ? Math.max(0, ej[i + 1].t0 - ej[i].t1) : 9;
+  const BOUND = /^(때|때는|때도|때에|정도|정도로|정도의|사이|사이에|사이에는|동안|동안에|이후|이후에|이후로|이후부터|이전|이전에|후|후에|뒤|뒤에|쯤|쯤에|만큼|대로|것|것이|것은|것을|것도|거|거죠|거예요|거고|거는|게|수|수도|수가|줄|데|중|중에|부터|까지|때문|때문에|때문이죠|덕분에|처럼|같이|보면|보니까|되면|되고|되는|되어|돼서|돼요|드리면|주는|주고|주면|있게|있는|있어서|있고|있다|있어요|싶은|싶어|않고|않는|않아|못하고)$/;
+  const MOD = /^(어떤|이런|그런|저런|무슨|모든|각|이번|다음|어느|여러|몇|첫)$|(릴|갈|볼|올|같은|많은|좋은|다른)$/; // 뒤 말을 꾸미는 말: 다음 자막으로 보낸다
+  const CLAUSE0 = /(서|고|면|니까|지만|는데|은데|다가|면서|려고|도록|어서|아서|해서|돼서)[,]?$/, CLAUSE = { test: w => CLAUSE0.test(w) && !/에서[,]?$/.test(w) && !CONNECTIVE.test(w) && !/^(그리고|그러고|그러면|그러니까|그래서|어떻게|보면)$/.test(w) } ; // 여기서 한 덩어리 말이 끝난다 ("몸에서"의 -에서, "그리고" 같은 접속어는 빼고)
+  const DEP = /^(듯한|듯이|듯)$/, isPred = i => i < ej.length && /^(안|못|좋|되|돼|괜찮|싫|그만)/.test(ej[i].text) && [...ej[i].text].length <= 5; // "쉬면 / 안 된대요", "기르시면 / 좋겠습니다"는 끊지 않는다
+  for (let k = 0; k + 1 < segs.length; k++) {
+    const s = segs[k], n = segs[k + 1], first = ej[n[0]].text.replace(/[,.?!]$/, ''), last = ej[s[1]].text, prevEnd = endW(last) || /[.?!]$/.test(last);
+    if (prevEnd) continue;
+    // ① 앞말에 붙는 말(때·정도·부터·보면·되면·듯한 …)이나 짧은 동사로 끝나는 말 덩이("자서", "해서")가 다음 자막 첫머리에 오면 앞 자막으로
+    if (n[1] > n[0] && (BOUND.test(first) || DEP.test(first) || (/게$/.test(last) && /^(해|하|되|돼|만들)/.test(first)) || (CLAUSE.test(first) && [...first].length <= 3 && !CLAUSE.test(last))) && len(s[0], n[0]) <= ST.maxChars + 2) { s[1]++; n[0]++; continue; }
+    // ①-2 말 덩이가 한두 어절 뒤에서 끝나고 합쳐도 짧으면 그 끝까지 앞 자막으로 ("2시 사이에 / 자게 되면" → 한 자막)
+    if (!CLAUSE.test(last)) { let j = -1; for (let q = n[0]; q <= Math.min(n[0] + 1, n[1] - 1); q++) if ((CLAUSE.test(ej[q].text) && !isPred(q + 1)) || endW(ej[q].text)) { j = q; break; } if (j >= 0 && len(s[0], j) <= ST.maxChars && gapAfter(s[1]) < 0.5) { n[0] = j + 1; s[1] = j; continue; } }
+    // ② 꾸미는 말(어떤·이런·어릴 …)이 앞 자막 끝에 남으면 다음 자막으로
+    if (s[1] > s[0] && MOD.test(last) && len(s[1], n[1]) <= ST.maxChars + 2) { s[1]--; n[0]--; continue; }
+    // ③ 실제로 쉬는 곳으로: 경계 한 어절 앞이나 뒤에 지금보다 0.15초 넘게 더 긴 쉼이 있으면 그쪽으로
+    const here = gapAfter(s[1]), back = s[1] > s[0] ? gapAfter(s[1] - 1) : -1, fwd = n[1] > n[0] ? gapAfter(n[0]) : -1;
+    if (fwd > here + 0.15 && fwd >= back && len(s[0], n[0]) <= ST.maxChars && !BOUND.test(ej[n[0] + 1] ? ej[n[0] + 1].text : '')) { s[1]++; n[0]++; }
+    else if (back > here + 0.15 && len(s[1], n[1]) <= ST.maxChars && !BOUND.test(last)) { s[1]--; n[0]--; }
+  }
   // 단독 연결어·아주 짧은 조각은 뒤와 합친다 (합쳐서 너무 길면 두고)
-  for (let k = 0; k + 1 < segs.length;) { const s = segs[k], n = segs[k + 1], t = txtOf(s); if ((CONNECTIVE.test(t) || dur(s) < ST.minDur) && !end.test(t) && [...(t + ' ' + txtOf(n))].length <= ST.maxChars) { n[0] = s[0]; segs.splice(k, 1); } else k++; }
+  for (let k = 0; k + 1 < segs.length;) { const s = segs[k], n = segs[k + 1], t = txtOf(s); if ((CONNECTIVE.test(t) || (dur(s) < ST.minDur && !CLAUSE.test(ej[s[1]].text))) && !endW(t) && [...(t + ' ' + txtOf(n))].length <= ST.maxChars) { n[0] = s[0]; segs.splice(k, 1); } else k++; } // 말 덩이가 끝난 짧은 자막("지속되어서")은 두기
   return segs;
 }
 /* 나누기 검사: 모든 어절을 순서대로 빠짐없이 덮어야 한다 */
