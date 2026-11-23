@@ -969,6 +969,8 @@ function learnStyle(P, cat) {
     if (d) { const s = d.clips[0].slots; small = c.layers[s.small] && !c.layers[s.small].off && !/^첨자\s*자막/.test(ls[s.small] || '') ? ls[s.small] : ''; main = ls[s.main] || ''; if (fol && d.two) { used.add(fol.id); const fl = fol.layers.map(L => oneLine(L.text)).filter(t => t && t !== d.base); main2 = fl[fl.length - 1] || ''; const fi = fol.layers.findIndex(L => oneLine(L.text) === main2), xb = layerX(P, c.layers[s.main]), xf = fi >= 0 ? layerX(P, fol.layers[fi]) : null; if (xb != null && xf != null) pos = { n1: [...main].length, n2: [...main2].length, xb, xf }; } }
     else if (c.layers.length === 1 && [...ls[0]].length >= 6) { d = simple.find(x => x.font && x.font === c.layers[0].font); if (!d) continue; main = ls[0]; }
     else continue;
+    // 글자가 없는 것(이름표 같은 그래픽을 디자인으로 읽은 것)과 숨긴 견본 줄("첨자 자막")을 큰 줄로 읽은 것은 효과자막 예시가 아니다
+    if (!(small + main + main2).trim() || /^첨자\s*자막$/.test(main.trim())) continue;
     used.add(c.id);
     const said = spokenLines(P, an, [[c.start, c.end]]).lines.map(l => l.text).join(' ');
     const s = an.sfx.find(a => Math.abs(a.start - c.start) < 0.2 * TICKS);
@@ -990,6 +992,54 @@ function mergeStyles(list) {
   out.avgDur = out.examples.length ? Math.round(out.examples.reduce((a, e) => a + e.dur, 0) / out.examples.length * 10) / 10 : 3;
   return out;
 }
+
+/* ================= 효과자막 규칙 (사람 완성본에서 계산한 업체 기준) =================
+   규칙은 결과를 직접 만들지 않는다. fxRuleCheck 가 "제안"을 내고, 화면에서 사람이 고르거나 "적용"으로 둔 안전한 규칙만 fxRuleApply 로 반영한다.
+   데이터가 모자라면(완성본 2개 미만 또는 효과자막 30개 미만) 규칙을 만들지 않는다. */
+const FXR = { minProjects: 2, minExamples: 30, minPerDesign: 5, share: 0.8, countSlack: 0.2, lenSlack: 2 }; // lenSlack: 사람 최대 길이보다 이만큼 넘을 때만 알린다(사람 결과에도 알림이 뜨는 잡음을 줄인다)
+const fxrLen = s => [...String(s || '').replace(/\s+/g, ' ').trim()].length;
+const fxrQuoted = s => /^[“"'‘].+[”"'’]$/.test(String(s || '').trim());
+const fxrEnd = s => { const t = String(s || '').trim().replace(/[”"'’]+$/, ''); return t ? t[t.length - 1] : ''; };
+const fxrLast = e => (e.main2 || '').trim() ? e.main2 : e.main;
+/* parts = 완성본별 스타일(learnStyle 결과)의 목록 */
+function fxRules(parts) {
+  parts = (parts || []).filter(p => p && Array.isArray(p.examples)); const ex = parts.flatMap(p => p.examples).filter(e => (e.main || '').trim());
+  const r = { ok: parts.length >= FXR.minProjects && ex.length >= FXR.minExamples, projects: parts.length, examples: ex.length, perMin: null, designs: {} };
+  if (!r.ok) return r;
+  const pm = parts.filter(p => p.minutes > 0.5 && p.count > 0).map(p => p.count / p.minutes); if (pm.length >= FXR.minProjects) r.perMin = [Math.min(...pm) * (1 - FXR.countSlack), Math.max(...pm) * (1 + FXR.countSlack)];
+  const by = new Map(); for (const e of ex) { if (!e.design) continue; if (!by.has(e.design)) by.set(e.design, []); by.get(e.design).push(e); }
+  for (const [d, a] of by) {
+    if (a.length < FXR.minPerDesign) continue;
+    const share = f => a.filter(f).length / a.length, o = { n: a.length };
+    o.maxMain = Math.max(...a.map(e => fxrLen(e.main))); const two = a.filter(e => (e.main2 || '').trim()); if (two.length >= FXR.minPerDesign) o.maxMain2 = Math.max(...two.map(e => fxrLen(e.main2)));
+    if (share(e => fxrQuoted(fxrLast(e)) || fxrQuoted(e.main)) >= FXR.share) o.quote = true;
+    if (share(e => fxrEnd(fxrLast(e)) === '!') >= FXR.share) o.bang = true;
+    r.designs[d] = o;
+  }
+  return r;
+}
+/* items = 편집기 제안 [{design, small, main, main2, on}], cat = 템플릿(견본 글자 확인용), minutes = 영상 길이(분) → [{i, rule, field, from, to, why, safe}] */
+function fxRuleCheck(items, rules, cat, minutes) {
+  const out = [], norm = s => String(s || '').replace(/[\s“”"'‘’]/g, '');
+  const samples = new Set(); for (const d of (cat && cat.designs) || []) for (const c of d.clips || []) for (const L of c.clip.layers || []) { const t = norm(oneLine(L.text || '')); if (t) samples.add(t); }
+  samples.add(norm('첨자 자막'));
+  (items || []).forEach((it, i) => {
+    if (!it || it.on === false) return;
+    for (const f of ['small', 'main', 'main2']) { const v = (it[f] || '').trim(); if (v && samples.has(norm(v))) out.push({ i, rule: 'sample', field: f, from: v, to: f === 'small' ? '' : v, why: '템플릿 견본 글자가 그대로 남아 있음', safe: f === 'small' }); }
+    if (!rules || !rules.ok) return;
+    const o = rules.designs[it.design]; if (!o) return;
+    const lastF = (it.main2 || '').trim() ? 'main2' : 'main', last = (it[lastF] || '').trim();
+    if (o.quote && last && !fxrQuoted(last) && !fxrQuoted(it.main)) { if (lastF === 'main') out.push({ i, rule: 'punct', field: 'main', from: it.main, to: '“' + it.main.trim() + '”', why: `이 디자인은 사람이 ${o.n}개 중 80% 이상 따옴표를 붙임`, safe: true }); }
+    else if (o.bang && last && !/[.!?…~”"'’)]$/.test(last)) out.push({ i, rule: 'punct', field: lastF, from: it[lastF], to: last + '!', why: `이 디자인은 사람이 ${o.n}개 중 80% 이상 느낌표로 끝냄`, safe: true });
+    if (o.maxMain && fxrLen((it.main || '').replace(/\|/g, '')) > o.maxMain + FXR.lenSlack) out.push({ i, rule: 'length', field: 'main', from: it.main, to: it.main, why: `사람이 이 디자인에 쓴 가장 긴 줄은 ${o.maxMain}자 (지금 ${fxrLen((it.main || '').replace(/\|/g, ''))}자)`, safe: false });
+    if (o.maxMain2 && fxrLen(it.main2) > o.maxMain2 + FXR.lenSlack) out.push({ i, rule: 'length', field: 'main2', from: it.main2, to: it.main2, why: `사람이 이 디자인 둘째 줄에 쓴 가장 긴 줄은 ${o.maxMain2}자 (지금 ${fxrLen(it.main2)}자)`, safe: false });
+  });
+  let count = null;
+  if (rules && rules.ok && rules.perMin && minutes > 0) { const n = (items || []).filter(x => x && x.on !== false).length, lo = Math.round(rules.perMin[0] * minutes), hi = Math.round(rules.perMin[1] * minutes); count = { n, lo, hi, why: n > hi ? `사람 완성본 기준(${lo}~${hi}개)보다 ${n - hi}개 많음` : n < lo ? `사람 완성본 기준(${lo}~${hi}개)보다 ${lo - n}개 적음` : '' }; }
+  return { list: out, count };
+}
+/* 고른 제안만 반영한다(안전한 것만). 반영한 수를 돌려준다 */
+function fxRuleApply(items, list) { let n = 0; for (const s of list || []) { const it = items[s.i]; if (!it || !s.safe || (it[s.field] || '').trim() !== String(s.from || '').trim()) continue; it[s.field] = s.to; n++; } return n; }
 
 /* 한 줄의 글자를 견본의 색 구간 수에 맞춰 나눈다. "앞|강조|뒤"처럼 직접 나눠 주면 그대로 쓰고,
    나눔 표시가 없으면(auto) 견본의 구간 비율대로 낱말 경계에서 나눠 색이 빠지지 않게 한다. */
@@ -1842,7 +1892,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>

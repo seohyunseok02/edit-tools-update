@@ -45,7 +45,7 @@ function open(id) {
 }
 for (const [id, name] of TOOLS) { const b = document.createElement('button'); b.id = 'tab-' + id; b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = name; b.onclick = () => open(id); nav.append(b); }
 // 버전 표시와 새 버전 알림 (프로그램 안에서만; 예전 프로그램 틀에는 이 기능이 없을 수 있다)
-const VER_LABEL = 'ver.1123.25'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1123.26'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = document.createElement('span'); ver.id = 'ver'; nav.append(ver);
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
