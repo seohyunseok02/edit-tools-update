@@ -23,7 +23,10 @@ nav button[aria-selected=true]{color:var(--ink);font-weight:700;background:var(-
 .learn:hover{color:var(--ink)}
 .learn[data-state=none],.learn[data-state=off]{color:var(--accent);border-color:var(--accent)}
 .learn + #ver{margin-left:8px}
+.learn + .learn{margin-left:8px}
+#notify[aria-pressed=false]{color:var(--mute);border-style:dashed}
 main{flex:1;min-height:0;position:relative}
+
 iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
 iframe[hidden]{display:none}
 </style>
@@ -42,7 +45,7 @@ function open(id) {
 }
 for (const [id, name] of TOOLS) { const b = document.createElement('button'); b.id = 'tab-' + id; b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = name; b.onclick = () => open(id); nav.append(b); }
 // 버전 표시와 새 버전 알림 (프로그램 안에서만; 예전 프로그램 틀에는 이 기능이 없을 수 있다)
-const VER_LABEL = 'ver.1123.23'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1123.24'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = document.createElement('span'); ver.id = 'ver'; nav.append(ver);
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
@@ -51,7 +54,39 @@ if (window.appUpdate) {
     if (r.needInstall) { b.textContent = '새 설치 파일이 필요한 업데이트가 있습니다'; b.disabled = true; }
     else { b.textContent = '새 버전 ' + r.n + ' 받음 · 눌러서 적용'; b.title = '지금 작업 중인 내용은 사라집니다. 저장한 뒤 누르세요. 누르지 않아도 다음에 켤 때 적용됩니다.'; b.onclick = () => appUpdate.apply(); }
     nav.insertBefore(b, ver); ver.style.marginLeft = '8px'; b.style.marginLeft = document.getElementById('learn') ? '8px' : 'auto';
+    st.ready = r.n || st.ready; toast(r.needInstall ? 'install' : 'ready', r.n, st.notes[r.n] || r.note || '');
   });
+  // 켜 둔 동안에도 10분마다(그리고 창으로 돌아올 때) 새 버전이 올라왔는지 본다. 받는 일은 프로그램을 켤 때 프로그램 틀이 한다.
+  const REMOTE = 'https://seohyunseok02.github.io/edit-tools-update/version.json';
+  const st = { cur: 0, ready: 0, told: 0, notes: {} };
+  try { st.told = +localStorage.getItem('upd-seen') || 0; } catch {} // 한 번 알린 버전은 프로그램을 다시 켜도 또 알리지 않는다
+  // 알림 끄기: 끄면 Windows 알림만 안 뜨고, 위쪽 "눌러서 적용" 버튼과 다음에 켤 때 자동 적용은 그대로다
+  const quiet = () => { try { return localStorage.getItem('upd-notify') === 'off'; } catch { return false; } };
+  const nb = document.createElement('button'); nb.id = 'notify'; nb.type = 'button'; nb.className = 'learn';
+  const drawN = () => { const off = quiet(); nb.textContent = off ? '🔕 업데이트 알림 꺼짐' : '🔔 업데이트 알림 켜짐'; nb.title = off ? '눌러서 업데이트 알림 켜기 (새 버전이 나오면 화면 오른쪽 아래에 알림)' : '눌러서 업데이트 알림 끄기 (꺼도 위쪽 적용 버튼과 자동 적용은 그대로)'; nb.setAttribute('aria-pressed', String(!off)); };
+  nb.onclick = () => { try { localStorage.setItem('upd-notify', quiet() ? 'on' : 'off'); } catch {} drawN(); };
+  drawN(); nav.insertBefore(nb, ver); nb.style.marginLeft = 'auto'; ver.style.marginLeft = '8px';
+  appUpdate.info().then(i => { st.cur = i.n | 0; }).catch(() => {});
+  async function poll() {
+    try {
+      const v = await (await fetch(REMOTE + '?t=' + Date.now(), { cache: 'no-store' })).json(); if (!v || !(v.n > 0)) return; st.notes[v.n] = v.note || '';
+      if (st.cur && v.n > st.cur && v.n > st.ready && v.n > st.told) toast('remote', v.n, v.note || '');
+    } catch (e) {}
+  }
+  setTimeout(poll, 60 * 1000); setInterval(poll, 10 * 60 * 1000);
+  let lastFocus = 0; window.addEventListener('focus', () => { if (Date.now() - lastFocus > 5 * 60 * 1000) { lastFocus = Date.now(); poll(); } });
+  /* Windows 알림(화면 오른쪽 아래, 카톡 알림처럼): ready = 받아 둠(바로 적용 가능), remote = 올라옴(껐다 켜면 받음), install = 새 설치 파일 필요.
+     알림을 누르면 프로그램 창이 앞으로 나오고, 위쪽 "눌러서 적용" 버튼으로 적용한다(작업 중인 내용이 사라질 수 있어 알림에서 바로 적용하지 않는다). */
+  function toast(kind, n, note) {
+    if ((n | 0) <= st.told) return; // 이 버전은 이미 알림 (받음·올라옴 어느 쪽이든 한 번만)
+    if (quiet()) return; // 알림을 꺼 두었으면 띄우지 않는다(켰을 때 아직 안 알린 버전은 알린다)
+    st.told = n | 0; try { localStorage.setItem('upd-seen', String(st.told)); } catch {} if (typeof Notification !== "function") return;
+    const title = kind === "install" ? "편집 도구 모음 · 새 설치 파일이 필요한 업데이트" : `편집 도구 모음 · 새 버전 ${n}${kind === "ready" ? " 받음" : "이 나왔습니다"}`;
+    const how = kind === "ready" ? "프로그램 위쪽의 \"눌러서 적용\"을 누르면 바로 적용됩니다(다음에 켤 때도 적용됩니다)." : kind === "remote" ? "프로그램을 껐다 켜면 받아서 적용할 수 있습니다." : "관리자에게 새 설치 파일을 받아 설치해 주세요.";
+    const show = () => { try { const x = new Notification(title, { body: (note ? note.slice(0, 160) + " / " : "") + how, tag: "edit-tools-update-" + n }); x.onclick = () => { try { window.focus(); } catch (e) {} x.close(); }; } catch (e) {} };
+    if (Notification.permission === "granted") show(); else if (Notification.permission !== "denied") Notification.requestPermission().then(p => { if (p === "granted") show(); }).catch(() => {});
+
+  }
 }
 // 공유 학습 폴더: 사람들이 고친 내용을 팀이 같이 쓰는 곳 (사무실 나스). 정하지 않으면 이 PC에만 쌓인다.
 if (window.learnApi) {
