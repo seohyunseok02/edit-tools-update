@@ -2,7 +2,7 @@
  {
   "path": "hub.html",
   "size": 9663,
-  "sha256": "e668bc7c065b1e29fbd1c38e0f3ad0ebccc9d9d535ab4404ddb5afdde18fb5c5"
+  "sha256": "3738e16cf80c4ec72deeb548ddba058150b05d52ac723c1388693e1962986f99"
  },
  {
   "path": "pages/cut.html",
@@ -46,8 +46,8 @@
  },
  {
   "path": "pages/subtitle.html",
-  "size": 218257,
-  "sha256": "0357bf4594b94fdb3730fda207bd48f9804402106a2f98b73b458f81bcc55415"
+  "size": 218713,
+  "sha256": "1dc9fedbb35933d1ac3210afd319e96b46a8dd54c2b5ca01b067bf62ef2857f1"
  },
  {
   "path": "pages/thumb.html",
@@ -87,6 +87,6 @@
  {
   "path": "version.json",
   "size": 73,
-  "sha256": "8c4db20b742dc622fbc74aa01ed7a78619d053319030b74b995d52ff99ccfb21"
+  "sha256": "ad3ad28d4ddc33027eaf6da1fef8274897c6aacaa573e8262630c989ef38ea1b"
  }
 ]

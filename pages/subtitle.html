@@ -1999,7 +1999,10 @@ $('btnFin').onclick = () => $('fileF').click();
 $('fileF').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return; $('styleNote').textContent = f.name + ' 읽는 중…';
   try { const P = await E.Proj.fromBytes(new Uint8Array(await f.arrayBuffer()), f.name), r = E.readTransStyle(P); if (!r) throw new Error('이 프로젝트에서 트랜지션을 찾지 못했습니다');
-    st.style = { mode: r.mode, lead: r.lead, pre: r.pre, post: r.post }; saveStyle(`${f.name}에서 트랜지션 ${r.count}개를 재어 맞춘 값입니다.`); renderStyle(); $('styleNote').textContent = st.style.from;
+    // 말소리 클립 끝으로만 재므로 늘린 구간을 못 볼 때가 있다: 편집자가 고른 "앞뒤 늘리기"는 잰 값으로 덮지 않는다
+    const keep = st.style.mode === 'extend' && r.mode !== 'extend', o = st.style;
+    st.style = keep ? { mode: 'extend', lead: r.lead, pre: o.pre, post: o.post } : { mode: r.mode, lead: r.lead, pre: r.pre, post: r.post };
+    saveStyle(`${f.name}에서 트랜지션 ${r.count}개를 재어 맞춘 값입니다.` + (keep ? ' 방식은 고른 대로 앞뒤 늘리기를 두고, 앞·뒤 길이도 그대로 두었습니다(시작 시점만 맞춤).' : '')); renderStyle(); $('styleNote').textContent = st.style.from;
   } catch (er) { $('styleNote').textContent = '재지 못했습니다: ' + er.message; }
 };
 
