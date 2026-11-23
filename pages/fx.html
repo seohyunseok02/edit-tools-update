@@ -1835,7 +1835,34 @@ const DB = {
   async put(c) { try { const db = await this.open(); await new Promise((res, rej) => { const tx = db.transaction('clients', 'readwrite'); tx.objectStore('clients').put(c); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); return true; } catch { return false; } },
   async del(name) { try { const db = await this.open(); await new Promise((res, rej) => { const tx = db.transaction('clients', 'readwrite'); tx.objectStore('clients').delete(name); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch {} },
 };
-async function saveClient() { const c = st.clients[st.cur]; if (c && !(await DB.put(c))) show('err1', '이 브라우저에 업체 설정을 보관하지 못했습니다. 창을 닫으면 사라지니 "업체 설정 내보내기"로 파일로 받아 두세요.'); }
+async function saveClient() { const c = st.clients[st.cur]; if (!c) return; c.savedAt = Date.now(); if (!(await DB.put(c))) show('err1', '이 브라우저에 업체 설정을 보관하지 못했습니다. 창을 닫으면 사라지니 "업체 설정 내보내기"로 파일로 받아 두세요.'); await shareClient(c); }
+/* 업체 설정 공유 (프로그램 안에서만): 이 PC 사용자 폴더와 팀 공유 학습 폴더(나스)에도 남겨, 업데이트·재설치·다른 PC에서도 업체가 그대로 보이게 한다.
+   fxclient/공통 = 업체 이름 목록(지운 표시 포함), fxclient/<업체> = 그 업체 설정. PC마다 자기 파일에만 쓰고, 읽을 때는 가장 최근 것을 쓴다. */
+const recOf = name => [...new TextEncoder().encode(name)].map(b => b.toString(16).padStart(2, '0')).join('');
+function clientData(c) { return { name: c.name, tplName: c.tplName, tplDate: c.tplDate, tpl: c.tplBytes ? b64(c.tplBytes) : '', style: c.style || null, parts: c.parts || null, borrow: c.borrow || null, off: c.off || null }; }
+async function shareClient(c, deleted) {
+  const LA = learnApi(); if (!LA || !c || !c.name) return; const at = c.savedAt || Date.now(), rec = recOf(c.name);
+  try {
+    if (!deleted) await LA.put({ tool: 'fxclient', client: c.name, rec, items: [{ kind: 'client', at, data: clientData(c) }] });
+    await LA.put({ tool: 'fxclient', client: '공통', rec, items: [{ kind: 'index', name: c.name, at, deleted: !!deleted }] });
+  } catch (e) { show('err1', '업체 설정을 공유 폴더에 남기지 못했습니다(이 PC에는 저장됨): ' + (e.message || e)); }
+}
+async function loadSharedClients() {
+  const LA = learnApi(); if (!LA) return 0; let n = 0;
+  try {
+    const idx = new Map(); for (const x of (await LA.load({ tool: 'fxclient', client: '공통' })).items || []) if (x && x.kind === 'index' && x.name && !(idx.get(x.name) && idx.get(x.name).at >= x.at)) idx.set(x.name, x);
+    for (const [name, x] of idx) {
+      const mine = st.clients[name], mineAt = mine && mine.savedAt || 0;
+      if (x.deleted) { if (mine && x.at > mineAt) { delete st.clients[name]; await DB.del(name); } continue; }
+      if (mine && mineAt >= x.at) continue;
+      const items = ((await LA.load({ tool: 'fxclient', client: name })).items || []).filter(i => i && i.kind === 'client' && i.data && i.data.name === name).sort((a, b) => b.at - a.at); const j = items[0] && items[0].data; if (!j) continue;
+      const c = { name, tplName: j.tplName, tplDate: j.tplDate, tplBytes: j.tpl ? unb64(j.tpl) : null, style: j.style, parts: j.parts || undefined, borrow: j.borrow || undefined, off: j.off || undefined, savedAt: items[0].at };
+      st.clients[name] = c; await DB.put(c); n++;
+    }
+    for (const c of Object.values(st.clients)) if (!idx.has(c.name)) { if (!c.savedAt) { c.savedAt = Date.now(); await DB.put(c); } await shareClient(c); } // 예전부터 이 PC에만 있던 업체도 공유 폴더에 올린다
+  } catch (e) {}
+  return n;
+}
 function fillClients() {
   const sel = $('client'); sel.textContent = ''; const names = Object.keys(st.clients).sort((a, b) => a.localeCompare(b, 'ko'));
   if (!names.length) sel.append(el('option', { value: '', text: '등록된 업체 없음' }));
@@ -1966,7 +1993,7 @@ function renderClient() {
 function ready() { const ok = !!(st.cat); $('s2').classList.toggle('off', !ok); const ok2 = ok && !!st.M; $('s3').classList.toggle('off', !ok2); $('s4').classList.toggle('off', !ok2); $('s5').classList.toggle('off', !ok2); renderGuide(); }
 $('client').onchange = () => pickClient($('client').value);
 $('btnAdd').onclick = async () => { const n = $('newName').value.trim(); if (!n) return show('err1', '새 업체 이름을 적어 주세요.'); if (!st.clients[n]) st.clients[n] = { name: n }; $('newName').value = ''; st.cur = n; fillClients(); await saveClient(); pickClient(n); };
-$('btnDel').onclick = async () => { const n = st.cur; if (!n) return; if ($('btnDel').dataset.sure !== n) { $('btnDel').dataset.sure = n; $('btnDel').textContent = `"${n}" 삭제 확인`; setTimeout(() => { $('btnDel').dataset.sure = ''; $('btnDel').textContent = '이 업체 삭제'; }, 4000); return; } delete st.clients[n]; await DB.del(n); $('btnDel').dataset.sure = ''; $('btnDel').textContent = '이 업체 삭제'; st.cur = ''; fillClients(); pickClient($('client').value); };
+$('btnDel').onclick = async () => { const n = st.cur; if (!n) return; if ($('btnDel').dataset.sure !== n) { $('btnDel').dataset.sure = n; $('btnDel').textContent = `"${n}" 삭제 확인`; setTimeout(() => { $('btnDel').dataset.sure = ''; $('btnDel').textContent = '이 업체 삭제'; }, 4000); return; } delete st.clients[n]; await DB.del(n); await shareClient({ name: n, savedAt: Date.now() }, true); $('btnDel').dataset.sure = ''; $('btnDel').textContent = '이 업체 삭제'; st.cur = ''; fillClients(); pickClient($('client').value); };
 function hookDrop(id, fileId, fn) {
   const d = $(id), f = $(fileId); d.onclick = () => f.click(); d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f.click(); } };
   f.onchange = e => { const xs = [...e.target.files]; e.target.value = ''; if (xs.length) fn(xs); };
@@ -2318,7 +2345,9 @@ function learnedText() {
 /* ---------- 시작 ---------- */
 (async () => {
   await 0; setupModes(); renderGuide();
-  for (const c of await DB.all()) st.clients[c.name] = c; st.cur = store.get('fx-last') || ''; fillClients(); if ($('client').value) await pickClient($('client').value); else renderClient();
+  for (const c of await DB.all()) st.clients[c.name] = c;
+  const got = await loadSharedClients(); if (got) show('err1', ''); // 공유 폴더(또는 이 PC 기록)에서 업체를 받아 온다: 업데이트·재설치 뒤에도, 다른 PC에서 등록한 업체도 보인다
+  st.cur = store.get('fx-last') || ''; fillClients(); if ($('client').value) await pickClient($('client').value); else renderClient();
   try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = (p, onText) => s.json(p, { modelTier: 'default', cache: false, onText }); st.save = await window.claude.use('downloads'); } } catch {}
   setupModes();
   learnFromEdits().then(n => loadLearned(n)).catch(() => {});

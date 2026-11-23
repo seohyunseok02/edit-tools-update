@@ -1934,13 +1934,28 @@ $('maxMin').onchange = () => refresh();
 
 /* GPT 연결: OpenAI 호환 주소(기본은 이 PC의 OmniRoute) */
 function aiSettings() { const s = store.get('cut-ai') || {}; if (s.mode) $('aiMode').value = s.mode; if (s.base) $('gptBase').value = s.base; if (s.model) $('gptModel').value = s.model; if (s.key) { $('gptKey').value = s.key; $('gptKeep').checked = true; } $('gptBox').hidden = $('aiMode').value !== 'gpt'; }
-function saveAi() { const o = { mode: $('aiMode').value, base: $('gptBase').value.trim(), model: $('gptModel').value.trim() }; if ($('gptKeep').checked) o.key = $('gptKey').value.trim(); store.set('cut-ai', o); $('gptBox').hidden = o.mode !== 'gpt'; refresh(); }
+function saveAi() { const o = { mode: $('aiMode').value, base: $('gptBase').value.trim(), model: $('gptModel').value.trim() }; if ($('gptKeep').checked) o.key = $('gptKey').value.trim(); store.set('cut-ai', o); $('gptBox').hidden = o.mode !== 'gpt'; refresh(); if (o.key) shareAi(o); }
+/* GPT 연결 설정 공유 (프로그램 안에서만): 키를 기억하게 한 PC의 설정을 팀 공유 학습 폴더에 남기고, 키가 없는 PC는 그것을 받아 쓴다.
+   OmniRoute가 있는 PC의 주소(127.0.0.1)는 다른 PC에서는 그 PC 이름으로 바꿔 쓴다. 업데이트·재설치 뒤에도 이 PC 기록에서 다시 받는다. */
+function learnApi() { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } }
+const pcOf = me => String(me || '').replace(/_[^_]*$/, '');
+async function shareAi(o) { const LA = learnApi(); if (!LA) return; try { const me = (await LA.config()).me; await LA.put({ tool: 'aiconf', client: '공통', rec: 'gpt', items: [{ kind: 'gpt', at: Date.now(), who: me, base: o.base, model: o.model, key: o.key }] }); } catch (e) {} }
+async function loadSharedAi() {
+  const LA = learnApi(); if (!LA || $('gptKey').value.trim()) return;
+  try {
+    const me = (await LA.config()).me, g = ((await LA.load({ tool: 'aiconf', client: '공통' })).items || []).filter(x => x && x.kind === 'gpt' && x.key && x.base).sort((a, b) => b.at - a.at)[0]; if (!g) return;
+    let base = g.base; if (g.who && g.who !== me && /\/\/(127\.0\.0\.1|localhost)[:/]/.test(base)) base = base.replace(/\/\/(127\.0\.0\.1|localhost)/, '//' + pcOf(g.who));
+    $('gptBase').value = base; if (g.model) $('gptModel').value = g.model; $('gptKey').value = g.key; $('gptKeep').checked = true;
+    store.set('cut-ai', { mode: $('aiMode').value, base, model: $('gptModel').value, key: g.key });
+    $('gptNote').textContent = g.who && g.who !== me ? `팀 공유 설정을 받아 왔습니다: ${pcOf(g.who)} PC의 OmniRoute를 씁니다. 그 PC가 켜져 있고 OmniRoute가 다른 PC 접속을 허용해야 합니다.` : '이 PC에 기억해 둔 연결 설정을 다시 불러왔습니다.';
+  } catch (e) {}
+}
 for (const id of ['aiMode', 'gptBase', 'gptModel', 'gptKey', 'gptKeep']) $(id).addEventListener('change', saveAi);
 async function gptFetch(pathname, body) {
   const base = $('gptBase').value.trim().replace(/\/+$/, ''), key = $('gptKey').value.trim();
   if (!/^https?:\/\//.test(base)) throw new Error('GPT 주소가 올바르지 않습니다.');
   let r; try { r = await fetch(base + '/' + pathname, { method: body ? 'POST' : 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, key ? { Authorization: 'Bearer ' + key } : {}), body: body ? JSON.stringify(body) : undefined }); }
-  catch (e) { throw new Error(/127\.0\.0\.1|localhost/.test(base) ? 'OmniRoute에 연결하지 못했습니다. OmniRoute가 켜져 있는지 확인해 주세요 (PowerShell에서 omniroute serve).' : 'GPT 주소에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.'); }
+  catch (e) { throw new Error(/127\.0\.0\.1|localhost/.test(base) ? 'OmniRoute에 연결하지 못했습니다. OmniRoute가 켜져 있는지 확인해 주세요 (PowerShell에서 omniroute serve).' : /:20128/.test(base) ? `${base.split('/')[2].split(':')[0]} PC의 OmniRoute에 연결하지 못했습니다. 그 PC가 켜져 있는지, OmniRoute가 다른 PC 접속을 허용하는지 확인해 주세요. 안 되면 AI를 "복사·붙여넣기"로 바꿔 쓰세요.` : 'GPT 주소에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.'); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) { const m = (j.error && (j.error.message || j.error)) || ('오류 ' + r.status); throw new Error(r.status === 401 ? '키가 맞지 않습니다. OmniRoute 대시보드에서 만든 키를 넣어 주세요. (' + m + ')' : r.status === 429 ? '사용 한도에 걸렸습니다. 잠시 뒤 다시 하거나 복사·붙여넣기 방식을 쓰세요. (' + m + ')' : String(m)); }
   return j;
@@ -2028,7 +2043,6 @@ function renderBounds() {
 $('bView').onchange = () => renderBounds();
 
 /* ---------- 4. 만들기 ---------- */
-function learnApi() { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } }
 async function saveOut(bytes, name) {
   const LA = learnApi();
   if (LA && !window.__testSave) { const r = await LA.save({ name, bytes }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다.'; }
@@ -2087,7 +2101,7 @@ function renderGuide() {
     ['💾', '만들기', !!st.built, 'btnBuild', '<b>컷편집 프로젝트 만들기</b>를 누르고 <b>편집 기록 저장</b>으로 기록도 남기세요.'],
   ], done: '받은 프로젝트를 프리미어에서 열어 확인하세요.' }; });
 }
-aiSettings(); refresh();
+aiSettings(); refresh(); loadSharedAi().then(refresh);
 </script>
 
 </body>
