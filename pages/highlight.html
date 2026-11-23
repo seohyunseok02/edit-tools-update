@@ -1755,6 +1755,40 @@ function runTiming(o) {
   return { cap, offset: off, ej, segs, out, bodyEnd, usedGiven: !!given, unaligned: ej.filter(x => !x.ok).length };
 }
 /* 결과 XML: 교정 XML을 그대로 두고 자막 클립만 새로 만든다 (스타일은 첫 자막 견본 복사) */
+/* ---------- 자막 교정 (브루 XML 그대로일 때): 맞춤법·띄어쓰기는 GPT, 줄 끝 온점·반점 지우기는 규칙. 자막 수·시간·구조는 그대로 ---------- */
+const capTrim = s => String(s).replace(/[.,。、]+(?=["'”’」』)\]]*\s*$)/, '').replace(/\s+$/, ''); // 물음표·느낌표·줄 중간 반점은 둔다
+function capFixPrompt(cap) {
+  return `너는 한국어 영상 자막 교정자다. 아래 자막 줄마다 맞춤법과 띄어쓰기만 고쳐라.
+- 말투·어휘·어순·내용은 바꾸지 마라. 입말 그대로 둔다(예: "근데", "되게", "~거든요", "막"). 더 좋은 표현으로 바꾸지 마라.
+- 줄을 합치거나 나누지 마라. 번호마다 한 줄이다.
+- 고유명사, 사람 이름, 병원 이름, 의학 용어, 영어 단어, 숫자 값은 철자를 바꾸지 마라(띄어쓰기만 맞춘다. 예: "3만번" → "3만 번").
+- 줄 끝의 온점(.)과 반점(,)은 프로그램이 지우니 신경 쓰지 마라. 물음표·느낌표·따옴표는 그대로 둔다.
+- 고칠 것이 없는 줄은 적지 마라. 바꾼 줄만 적는다.
+
+아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라.
+{"lines":[{"i":12,"t":"고친 줄 전체"}]}
+
+[자막] 번호 | 글자
+${cap.clips.map((c, i) => `${i} | ${c.text}`).join('\n')}`;
+}
+/* GPT 답을 받아 줄마다 적용한다. 글자 뼈대가 크게 달라진 줄(뜻이 바뀌었을 수 있음)은 받지 않고 원래대로 둔다 */
+function capApplyFix(cap, ans) {
+  const texts = cap.clips.map(c => c.text), got = new Map(), changed = [], rejected = [], norm = s => String(s || '').replace(/[\s.,!?~"'“”‘’·…:;()\-]/g, '');
+  for (const x of (ans && Array.isArray(ans.lines) ? ans.lines : [])) { const i = +x.i; if (Number.isInteger(i) && i >= 0 && i < texts.length && typeof x.t === 'string' && x.t.trim()) got.set(i, x.t.replace(/\s+/g, ' ').trim()); }
+  texts.forEach((t, i) => {
+    let v = got.has(i) ? got.get(i) : t;
+    if (got.has(i)) { const a = norm(t), b = norm(v), same = a && b ? lcsAlign(a, b).len / Math.max(a.length, b.length) : 0; if (same < 0.75) { rejected.push({ i, from: t, to: v }); v = t; } }
+    v = capTrim(v); if (v !== t) changed.push({ i, from: t, to: v, by: got.has(i) && !rejected.some(r => r.i === i) ? (capTrim(t) === v ? 'trim' : 'gpt') : 'trim' }); texts[i] = v;
+  });
+  return { texts, changed, rejected };
+}
+/* 고친 글자를 XML에 넣는다(이름·str 만 바꾼다) */
+function capXml(cap, texts) {
+  const parsed = parseCaptionXml(new XMLSerializer().serializeToString(cap.doc.cloneNode(true)));
+  if (parsed.clips.length !== texts.length) throw new Error('자막 수가 맞지 않습니다');
+  parsed.clips.forEach((c, i) => { const nm = ch(c.node, 'name'); if (nm) nm.textContent = texts[i]; const v = parsed.strOf(c.node); if (v) v.textContent = texts[i]; });
+  return '﻿<?xml version="1.0" encoding="utf-8"?>\n' + new XMLSerializer().serializeToString(parsed.doc.documentElement);
+}
 function writeCaptionXml(cap, segs, seqName) {
   const doc = cap.doc.cloneNode(true), parsed = parseCaptionXml(new XMLSerializer().serializeToString(doc)), tpl = parsed.clips[0].node, track = parsed.track;
   for (const c of parsed.clips) c.node.parentNode.removeChild(c.node);
@@ -1803,7 +1837,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>

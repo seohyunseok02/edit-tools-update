@@ -100,6 +100,18 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     <div class="drop" id="dropF" tabindex="0" role="button"><b>교정 XML · .vrew · mp3 · 프로젝트(.prproj)</b><span id="nameF">여기에 끌어다 놓거나 눌러서 고르세요</span></div>
     <input type="file" id="fileF" accept=".xml,.vrew,.mp3,.wav,.m4a,.prproj" multiple hidden>
     <div class="kv" id="fileList"></div>
+    <div class="kv" id="fixBox" hidden>
+      <h3>자막 교정 <small class="note">브루에서 내보낸 XML 그대로라면 먼저 교정하세요</small></h3>
+      <p class="note">맞춤법·띄어쓰기를 GPT로 고치고, 줄 끝의 온점·반점을 지웁니다. 자막 수·시간·줄 나눔과 말투는 그대로입니다. 뜻이 바뀔 만큼 달라진 줄은 받지 않고 원래대로 둡니다.</p>
+      <div class="row"><button class="pri" id="btnFix">맞춤법·띄어쓰기 교정하기</button><button id="btnFixSave" hidden>교정 XML 저장</button><span class="note" id="fixState"></span></div>
+      <div id="fixManual" hidden>
+        <ol class="steps"><li><button class="pri" id="btnFixCopy">요청문 복사</button> 를 눌러 ChatGPT 새 대화에 붙여넣고 보냅니다. <span class="note" id="fixCopyState"></span></li><li>ChatGPT가 준 답 전체를 아래 칸에 붙이고 <b>교정 적용</b>을 누릅니다.</li></ol>
+        <textarea id="fixIn" placeholder="AI가 준 답을 여기에 붙여넣으세요 ( { 로 시작해 } 로 끝나는 내용 )"></textarea>
+        <div class="row"><button class="pri" id="btnFixPaste">교정 적용</button><button id="btnFixTrim">GPT 없이 끝 온점·반점만 지우기</button></div>
+        <details><summary>복사 버튼이 안 될 때</summary><textarea id="fixOut" readonly></textarea></details>
+      </div>
+      <details id="fixDetail" hidden><summary id="fixSum"></summary><pre id="fixList" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0"></pre></details>
+    </div>
     <p class="note" id="info"></p>
     <div class="msg" id="err1" hidden></div>
   </section>
@@ -1768,6 +1780,40 @@ function runTiming(o) {
   return { cap, offset: off, ej, segs, out, bodyEnd, usedGiven: !!given, unaligned: ej.filter(x => !x.ok).length };
 }
 /* 결과 XML: 교정 XML을 그대로 두고 자막 클립만 새로 만든다 (스타일은 첫 자막 견본 복사) */
+/* ---------- 자막 교정 (브루 XML 그대로일 때): 맞춤법·띄어쓰기는 GPT, 줄 끝 온점·반점 지우기는 규칙. 자막 수·시간·구조는 그대로 ---------- */
+const capTrim = s => String(s).replace(/[.,。、]+(?=["'”’」』)\]]*\s*$)/, '').replace(/\s+$/, ''); // 물음표·느낌표·줄 중간 반점은 둔다
+function capFixPrompt(cap) {
+  return `너는 한국어 영상 자막 교정자다. 아래 자막 줄마다 맞춤법과 띄어쓰기만 고쳐라.
+- 말투·어휘·어순·내용은 바꾸지 마라. 입말 그대로 둔다(예: "근데", "되게", "~거든요", "막"). 더 좋은 표현으로 바꾸지 마라.
+- 줄을 합치거나 나누지 마라. 번호마다 한 줄이다.
+- 고유명사, 사람 이름, 병원 이름, 의학 용어, 영어 단어, 숫자 값은 철자를 바꾸지 마라(띄어쓰기만 맞춘다. 예: "3만번" → "3만 번").
+- 줄 끝의 온점(.)과 반점(,)은 프로그램이 지우니 신경 쓰지 마라. 물음표·느낌표·따옴표는 그대로 둔다.
+- 고칠 것이 없는 줄은 적지 마라. 바꾼 줄만 적는다.
+
+아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라.
+{"lines":[{"i":12,"t":"고친 줄 전체"}]}
+
+[자막] 번호 | 글자
+${cap.clips.map((c, i) => `${i} | ${c.text}`).join('\n')}`;
+}
+/* GPT 답을 받아 줄마다 적용한다. 글자 뼈대가 크게 달라진 줄(뜻이 바뀌었을 수 있음)은 받지 않고 원래대로 둔다 */
+function capApplyFix(cap, ans) {
+  const texts = cap.clips.map(c => c.text), got = new Map(), changed = [], rejected = [], norm = s => String(s || '').replace(/[\s.,!?~"'“”‘’·…:;()\-]/g, '');
+  for (const x of (ans && Array.isArray(ans.lines) ? ans.lines : [])) { const i = +x.i; if (Number.isInteger(i) && i >= 0 && i < texts.length && typeof x.t === 'string' && x.t.trim()) got.set(i, x.t.replace(/\s+/g, ' ').trim()); }
+  texts.forEach((t, i) => {
+    let v = got.has(i) ? got.get(i) : t;
+    if (got.has(i)) { const a = norm(t), b = norm(v), same = a && b ? lcsAlign(a, b).len / Math.max(a.length, b.length) : 0; if (same < 0.75) { rejected.push({ i, from: t, to: v }); v = t; } }
+    v = capTrim(v); if (v !== t) changed.push({ i, from: t, to: v, by: got.has(i) && !rejected.some(r => r.i === i) ? (capTrim(t) === v ? 'trim' : 'gpt') : 'trim' }); texts[i] = v;
+  });
+  return { texts, changed, rejected };
+}
+/* 고친 글자를 XML에 넣는다(이름·str 만 바꾼다) */
+function capXml(cap, texts) {
+  const parsed = parseCaptionXml(new XMLSerializer().serializeToString(cap.doc.cloneNode(true)));
+  if (parsed.clips.length !== texts.length) throw new Error('자막 수가 맞지 않습니다');
+  parsed.clips.forEach((c, i) => { const nm = ch(c.node, 'name'); if (nm) nm.textContent = texts[i]; const v = parsed.strOf(c.node); if (v) v.textContent = texts[i]; });
+  return '﻿<?xml version="1.0" encoding="utf-8"?>\n' + new XMLSerializer().serializeToString(parsed.doc.documentElement);
+}
 function writeCaptionXml(cap, segs, seqName) {
   const doc = cap.doc.cloneNode(true), parsed = parseCaptionXml(new XMLSerializer().serializeToString(doc)), tpl = parsed.clips[0].node, track = parsed.track;
   for (const c of parsed.clips) c.node.parentNode.removeChild(c.node);
@@ -1816,7 +1862,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
@@ -1836,10 +1882,35 @@ function renderFiles() {
   for (const k in KIND) { const f = st.files[k]; box.append(el('div', { class: 'row' }, el('span', { text: (f ? '✅ ' : '⬜ ') + KIND[k][0] }), el('span', { class: 'note', text: f ? f.name : '아직 없음' }))); }
 }
 async function addFiles(list) {
-  show('err1', ''); for (const f of list) for (const k in KIND) if (KIND[k][1].test(f.name)) st.files[k] = f;
-  renderFiles(); $('nameF').textContent = Object.keys(st.files).length + '/4 개 넣음';
+  show('err1', ''); for (const f of list) for (const k in KIND) if (KIND[k][1].test(f.name)) { st.files[k] = f; if (k === 'xml' && f !== st.fixedFile) { st.fix = null; $('fixDetail').hidden = true; $('btnFixSave').hidden = true; $('fixManual').hidden = true; $('fixState').textContent = /교정|맞춤법/.test(f.name) ? '이름으로 보아 이미 교정한 XML 같습니다. 그대로 써도 됩니다.' : ''; } }
+  renderFiles(); $('nameF').textContent = Object.keys(st.files).length + '/4 개 넣음'; $('fixBox').hidden = !st.files.xml;
   if (Object.keys(KIND).every(k => st.files[k])) await analyze();
 }
+
+/* ---------- 1-1. 자막 교정: 맞춤법·띄어쓰기(GPT) + 줄 끝 온점·반점 지우기(규칙) → 교정 XML 로 바꿔 넣는다 ---------- */
+async function fixCap() { return E.parseCaptionXml(await st.files.xml.text()); }
+async function applyFix(ans) {
+  const cap = await fixCap(), r = E.capApplyFix(cap, ans), xml = E.capXml(cap, r.texts), base = st.files.xml.name.replace(/\.xml$/i, '').replace(/_?xml$/i, '');
+  const f = new File([xml], base + '_맞춤법_띄어쓰기_교정.xml', { type: 'text/xml' }); st.fix = { xml, name: f.name, r }; st.fixedFile = f;
+  const gpt = r.changed.filter(c => c.by === 'gpt').length, trim = r.changed.length - gpt;
+  $('fixState').textContent = `교정했습니다: 맞춤법·띄어쓰기 ${gpt}줄, 끝 온점·반점만 지운 줄 ${trim}줄` + (r.rejected.length ? `, 뜻이 바뀔 수 있어 받지 않은 줄 ${r.rejected.length}줄` : '') + '. 이 XML로 타이밍을 맞춥니다.';
+  $('fixSum').textContent = `바뀐 줄 ${r.changed.length}개 보기`; $('fixDetail').hidden = !r.changed.length && !r.rejected.length;
+  $('fixList').textContent = r.changed.map(c => `${c.i}. ${c.from}  →  ${c.to}`).join('\n') + (r.rejected.length ? '\n\n[받지 않은 제안]\n' + r.rejected.map(c => `${c.i}. ${c.from}  ✕  ${c.to}`).join('\n') : '');
+  $('btnFixSave').hidden = false; $('fixManual').hidden = true; await addFiles([f]);
+}
+$('btnFix').onclick = async () => {
+  show('err1', ''); $('btnFix').disabled = true; const md = mode();
+  try {
+    const prompt = E.capFixPrompt(await fixCap());
+    if (md === 'gpt' || (md === 'claude' && st.ask)) { $('fixState').textContent = (md === 'gpt' ? 'GPT' : 'Claude') + '가 교정하는 중… 보통 1~2분 걸립니다.'; await applyFix(md === 'gpt' ? await askGpt(prompt) : await st.ask(prompt)); }
+    else { st.fixPrompt = prompt; $('fixOut').value = prompt; $('fixIn').value = ''; $('fixManual').hidden = false; $('fixState').textContent = `요청문 ${prompt.length.toLocaleString()}자`; }
+  } catch (er) { $('fixState').textContent = ''; show('err1', '교정하지 못했습니다: ' + (er.message || er) + '\n"GPT 없이 끝 온점·반점만 지우기"나 복사·붙여넣기 방식으로 할 수 있습니다.'); $('fixManual').hidden = false; }
+  $('btnFix').disabled = false;
+};
+$('btnFixCopy').onclick = async () => { try { await navigator.clipboard.writeText(st.fixPrompt || ''); $('fixCopyState').textContent = '복사했습니다.'; } catch { const d = $('fixOut').closest('details'); d.open = true; $('fixOut').select(); $('fixCopyState').textContent = '아래 칸이 선택됐으니 Ctrl+C로 복사하세요.'; } };
+$('btnFixPaste').onclick = async () => { show('err1', ''); try { const raw = $('fixIn').value, a = raw.indexOf('{'), b = raw.lastIndexOf('}'); if (a < 0 || b <= a) throw new Error('{ } 로 된 답이 보이지 않습니다'); const body = raw.slice(a, b + 1); let ans; try { ans = JSON.parse(body); } catch (e1) { ans = JSON.parse(body.split('“').join('"').split('”').join('"')); } await applyFix(ans); } catch (er) { show('err1', '붙여넣은 답을 읽지 못했습니다. ' + er.message); } };
+$('btnFixTrim').onclick = async () => { show('err1', ''); try { await applyFix({ lines: [] }); } catch (er) { show('err1', er.message); } };
+$('btnFixSave').onclick = () => { if (!st.fix) return; const a = el('a', { href: URL.createObjectURL(new Blob([st.fix.xml], { type: 'text/xml' })), download: st.fix.name }); document.body.append(a); a.click(); a.remove(); };
 $('dropF').onclick = () => $('fileF').click(); $('dropF').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileF').click(); } };
 $('fileF').onchange = e => { const xs = [...e.target.files]; e.target.value = ''; if (xs.length) addFiles(xs); };
 $('dropF').ondragover = e => { e.preventDefault(); $('dropF').classList.add('over'); }; $('dropF').ondragleave = () => $('dropF').classList.remove('over');
