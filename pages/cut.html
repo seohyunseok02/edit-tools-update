@@ -1584,6 +1584,16 @@ function readTransStyle(P) {
   }
   if (!lead.length) return null;
   const s = v => Math.round(Math.max(0, v) / TICKS * 100) / 100, r = { count: lead.length, lead: s(med(lead)), pre: s(med(pre)), post: s(med(post)) };
+  // 늘린 구간에는 오디오 클립도 같이 늘어나 클립 끝으로는 0으로 잰다: 받아쓰기가 있으면 말 끝·시작에서 재고, 보통 컷의 빈틈만큼 뺀다
+  const words = (cutVoices(P, an.seq).sort((a, b) => b.words.length - a.words.length)[0] || { words: [] }).words;
+  if (words.length > 50) {
+    const gap = (E0, S0) => { const pw = words.filter(w => w.e <= E0 + fr && w.e > E0 - 4 * TICKS), nw = words.filter(w => w.t >= S0 - fr && w.t < S0 + 4 * TICKS); return [pw.length ? E0 - Math.max(...pw.map(w => w.e)) : null, nw.length ? Math.min(...nw.map(w => w.t)) - S0 : null]; };
+    const next = E0 => Math.min(...foot.filter(c => c.start >= E0 - fr).map(c => c.start)), ok = a => a.filter(x => x != null);
+    const trEnds = tr.map(x => { const e = foot.filter(c => c.end > x.start && c.end <= x.end).map(c => c.end); return e.length ? Math.max(...e) : null; }).filter(x => x != null);
+    const plain = [...new Set(foot.map(c => c.end))].filter(e => !trEnds.some(t => Math.abs(t - e) < fr) && foot.some(c => c.start >= e - fr)).map(e => gap(e, next(e)));
+    const at = trEnds.map(e => gap(e, next(e))), wp = ok(at.map(g => g[0])), wq = ok(at.map(g => g[1]));
+    if (wp.length || wq.length) { r.pre = s(med(wp) - med(ok(plain.map(g => g[0])))); r.post = s(med(wq) - med(ok(plain.map(g => g[1])))); r.byWords = true; }
+  }
   r.mode = r.pre + r.post >= 0.2 ? 'extend' : 'overlay'; return r;
 }
 const itemTimes = n => { const t = ch(n, 'ClipTrackItem', 'TrackItem') || ch(n, 'TransitionTrackItem', 'TrackItem'); return t ? { t, s: +txt(ch(t, 'Start')) || 0, e: +txt(ch(t, 'End')) || 0 } : null; };
