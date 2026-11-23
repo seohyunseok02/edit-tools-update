@@ -1335,17 +1335,20 @@ function gptSetup(doc) {
   const keyRow = $('gptKey').closest('.row'), row = doc.createElement('div'); row.className = 'row';
   row.innerHTML = '<label for="gptBase">주소</label><input type="text" id="gptBase" spellcheck="false" style="flex:2;min-width:160px">'; box.insertBefore(row, keyRow);
   const lab = keyRow && keyRow.querySelector('label'); if (lab) lab.textContent = '키'; $('gptKey').placeholder = 'OmniRoute 대시보드에서 만든 키';
-  $('gptBase').value = ls.get('gpt-base') || (/^sk-/.test(oldKey) ? GPT_DEFAULT.openai : GPT_DEFAULT.base);
+  // OmniRoute 키도 sk- 로 시작하므로(35자) 길이·접두어로 진짜 OpenAI 키만 가린다
+  const paidKey = k => /^sk-(proj|svcacct|admin)-/.test(k) || /^sk-[\w-]{40,}$/.test(k), paidBase = () => /api\.openai\.com/.test($('gptBase').value);
+  $('gptBase').value = ls.get('gpt-base') || (paidKey(oldKey) ? GPT_DEFAULT.openai : GPT_DEFAULT.base);
   const sel = $('gptModel'), addOpt = v => { if (sel && v && ![...sel.options].some(o => o.value === v)) { const o = doc.createElement('option'); o.value = o.textContent = v; sel.append(o); } };
   if (sel && !sel.options.length) addOpt(GPT_DEFAULT.model);
   const note = $('gptNote'); if (note) note.textContent = '이 PC의 OmniRoute를 거쳐 ChatGPT 구독 안에서 씁니다(추가 요금 없음). 키는 OmniRoute 대시보드에서 만듭니다. 주소를 https://api.openai.com/v1 로 바꾸고 sk- 키를 넣으면 API 요금이 나가는 방식으로도 쓸 수 있습니다.';
   const LA = (() => { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } })(); let loading = false;
-  const share = async () => { const key = $('gptKey').value.trim(); if (loading || !LA || !key || !$('gptKeep').checked || /^sk-/.test(key)) return; try { const me = (await LA.config()).me; await LA.put({ tool: 'aiconf', client: '공통', rec: 'gpt', items: [{ kind: 'gpt', at: Date.now(), who: me, base: $('gptBase').value.trim(), model: sel ? sel.value : '', key }] }); } catch {} };
+  const share = async () => { const key = $('gptKey').value.trim(); if (loading || !LA || !key || !$('gptKeep').checked || paidKey(key) || paidBase()) return; try { const me = (await LA.config()).me; await LA.put({ tool: 'aiconf', client: '공통', rec: 'gpt', items: [{ kind: 'gpt', at: Date.now(), who: me, base: $('gptBase').value.trim(), model: sel ? sel.value : '', key }] }); } catch {} };
   $('gptBase').addEventListener('change', () => { ls.set('gpt-base', $('gptBase').value.trim()); share(); });
   for (const id of ['gptKey', 'gptKeep', 'gptModel']) if ($(id)) $(id).addEventListener('change', share);
   if (LA) (async () => {
     try {
-      const me = (await LA.config()).me; if ($('gptKey').value.trim()) return; // 이 PC에 기억한 키가 있으면 그대로
+      // 이 PC에 기억한 키가 있으면 그대로. OmniRoute가 이 PC에 있으면 그 설정을 팀에 다시 알린다(예전 판에서 공유가 빠졌던 PC도 이때 올라간다)
+      const me = (await LA.config()).me; if ($('gptKey').value.trim()) { if (/\/\/(127\.0\.0\.1|localhost)[:/]/.test($('gptBase').value)) share(); return; }
       const g = ((await LA.load({ tool: 'aiconf', client: '공통' })).items || []).filter(x => x && x.kind === 'gpt' && x.key && x.base).sort((a, b) => b.at - a.at)[0]; if (!g) return;
       let base = g.base; if (g.who && g.who !== me && /\/\/(127\.0\.0\.1|localhost)[:/]/.test(base)) base = base.replace(/\/\/(127\.0\.0\.1|localhost)/, '//' + String(g.who).replace(/_[^_]*$/, ''));
       loading = true; $('gptBase').value = base; ls.set('gpt-base', base); addOpt(g.model); if (sel && g.model) sel.value = g.model;
