@@ -1,8 +1,8 @@
 [
  {
   "path": "hub.html",
-  "size": 5595,
-  "sha256": "a07bafb2279b4429f32372c7291a48a1b90f5bad1995180e4ebcc7c1f86e5ca3"
+  "size": 5623,
+  "sha256": "b0a615163a768a5a50ab7535cff32ade42c0373c9cb47a18724a749f421627ac"
  },
  {
   "path": "pages/cut.html",
@@ -16,8 +16,8 @@
  },
  {
   "path": "pages/fx.html",
-  "size": 251115,
-  "sha256": "2bf2535734d857b750f1737d944812162c44807777807e72de8f39ddec96ff4b"
+  "size": 252589,
+  "sha256": "6cdff8fda5cd14862873cd8005a51f4c4e0737bd468ad66e01b0a23898ce21d5"
  },
  {
   "path": "pages/highlight.html",
@@ -33,6 +33,11 @@
   "path": "pages/spell.html",
   "size": 208531,
   "sha256": "ad48d24009db2c8d3188129cb64abc340a3e2012f5f4fe7e6282ce27ea250350"
+ },
+ {
+  "path": "pages/stats.html",
+  "size": 181310,
+  "sha256": "48fe086f9edfa253b15e62de42a51c0fd7888d64797d6aafaa3bf89a3a37be15"
  },
  {
   "path": "pages/subtime.html",
@@ -81,7 +86,7 @@
  },
  {
   "path": "version.json",
-  "size": 230,
-  "sha256": "d53c2c6062ea3d8c4ab1c51a798a6cb486f3039bbb2e176e421a1a4685121282"
+  "size": 244,
+  "sha256": "a505868221f9fe4f9d0f3baf01cf099f0576334ac7048c25d914c90de7eeb9b5"
  }
 ]

@@ -1946,7 +1946,7 @@ async function loadSharedClients() {
 }
 function fillClients() {
   const sel = $('client'); sel.textContent = ''; const names = Object.keys(st.clients).sort((a, b) => a.localeCompare(b, 'ko'));
-  if (!names.length) sel.append(el('option', { value: '', text: '등록된 업체 없음' }));
+  if (!names.length) sel.append(el('option', { value: '', text: st.loadingClients ? '업체 목록 불러오는 중…' : '등록된 업체 없음' }));
   for (const n of names) sel.append(el('option', { value: n, text: n })); if (st.clients[st.cur]) sel.value = st.cur; else st.cur = sel.value;
 }
 async function pickClient(name) {
@@ -2403,7 +2403,9 @@ async function learnFromEdits() {
       const cat = E.analyzeTemplate(await E.Proj.fromBytes(c.tplBytes, c.tplName));
       const a = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), cat).examples, b = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), cat).examples;
       const items = fxDiff(a, b); if (!items) continue;
-      await LA.put({ tool: 'fx', client: clientKey(p.client), rec: p.id, mtime: p.mtime, items }); n += items.length;
+      const touched = new Set(items.filter(x => x.kind === 'design' || x.kind === 'text').map(x => x.said + '|' + x.text)).size, removed = items.filter(x => x.kind === 'removed').length;
+      items.push({ kind: 'summary', project: p.name, client: p.client, gen: a.length, final: b.length, kept: Math.max(0, a.length - removed - touched), removed, changed: touched, added: items.filter(x => x.kind === 'added').length }); // 학습 현황판용
+      await LA.put({ tool: 'fx', client: clientKey(p.client), rec: p.id, mtime: p.mtime, items }); n += items.length - 1;
     } catch (e) {}
   }
   return n;
@@ -2411,7 +2413,7 @@ async function learnFromEdits() {
 async function loadLearned(fresh) {
   const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA || !st.cur) { box.hidden = true; return; }
   try {
-    const r = await LA.load({ tool: 'fx', client: clientKey(st.cur) }); st.learned = r.items || [];
+    const r = await LA.load({ tool: 'fx', client: clientKey(st.cur) }); st.learned = (r.items || []).filter(x => x.kind !== 'summary'); // summary = 학습 현황용 프로젝트 요약
     box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (st.learned.length ? `편집자들이 이 업체 영상에서 고친 기록 ${st.learned.length}건(${r.people}명)을 요청문에 넣습니다.` : '아직 이 업체에서 고친 기록이 없습니다. 만든 프로젝트를 프리미어에서 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
   } catch (e) { box.hidden = true; }
 }
@@ -2427,12 +2429,18 @@ function learnedText() {
 /* ---------- 시작 ---------- */
 (async () => {
   await 0; setupModes(); renderGuide();
-  for (const c of await DB.all()) st.clients[c.name] = c;
-  const got = await loadSharedClients(); if (got) show('err1', ''); // 공유 폴더(또는 이 PC 기록)에서 업체를 받아 온다: 업데이트·재설치 뒤에도, 다른 PC에서 등록한 업체도 보인다
-  st.cur = store.get('fx-last') || ''; fillClients(); if ($('client').value) await pickClient($('client').value); else renderClient();
+  // 보관함(브라우저 DB)에 있는 업체부터 바로 보여 준다. DB가 응답하지 않아도 5초 뒤에는 넘어간다
+  for (const c of await Promise.race([DB.all(), new Promise(r => setTimeout(() => r([]), 5000))])) st.clients[c.name] = c;
+  st.loadingClients = !!learnApi(); st.cur = store.get('fx-last') || ''; fillClients(); if ($('client').value) await pickClient($('client').value); else renderClient();
+  // 그다음 이 PC 기록·팀 공유 폴더에서 업체를 받아 와 목록에 더한다: 보관함이 비었거나(업데이트·재설치·다른 PC) 다른 PC에서 등록한 업체도 자동으로 되살아난다
+  st.restored = loadSharedClients().then(async got => {
+    st.loadingClients = false; const had = st.cur && st.clients[st.cur]; st.cur = st.cur || store.get('fx-last') || ''; fillClients();
+    if (got && (!had || !st.cat)) await pickClient($('client').value);
+    if (got) { const n = $('learnNote'); n.hidden = false; n.textContent = `이 PC 기록·팀 공유 폴더에서 업체 ${got}곳을 되살렸습니다. ` + (n.textContent || ''); }
+  }).catch(() => { st.loadingClients = false; fillClients(); });
   try { if (window.claude && window.claude.use) { const s = await window.claude.use('sample'); if (s) st.ask = (p, onText) => s.json(p, { modelTier: 'default', cache: false, onText }); st.save = await window.claude.use('downloads'); } } catch {}
   setupModes();
-  learnFromEdits().then(n => loadLearned(n)).catch(() => {});
+  Promise.resolve(st.restored).then(() => learnFromEdits()).then(n => loadLearned(n)).catch(() => {}); // 되살린 업체의 고친 내용도 배우도록, 업체를 받아 온 뒤에 배운다
 })();
 </script>
 
