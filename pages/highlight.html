@@ -1247,6 +1247,131 @@ function buildHighlight(P, an, plan, opt) {
   return { segs: segs.map(g => ({ start: g.d, end: g.d + g.len })), total, shift, video: nV, audio: nA, log };
 }
 
+/* ================= 컷편집: 남길 구간(원본 타임라인 기준)만 모든 영상·오디오 트랙에서 같은 지점으로 잘라 앞에서부터 이어 붙인다 =================
+   keep = [{t0,t1}] (원본 시퀀스 틱, 시간 순서). 클립의 이펙트·볼륨은 복제본에 그대로 따라간다. 원래 클립은 트랙에서 빼기만 한다(파일에는 남음). */
+function buildCut(P, seq, keep) {
+  const fr = seq.frame, snap = t => Math.round(t / fr) * fr, segs = []; let cur = 0;
+  for (const r of keep) { const a = snap(Math.min(r.t0, r.t1)), b = snap(Math.max(r.t0, r.t1)); if (b - a < fr) continue; if (segs.length && a < segs[segs.length - 1].b) throw new Error('남길 구간이 겹치거나 순서가 뒤바뀌었습니다'); segs.push({ a, b, d: cur, len: b - a }); cur += b - a; }
+  if (!segs.length) throw new Error('남길 구간이 없습니다');
+  const tracks = seq.vtracks.map(t => ({ t, audio: false })).concat(seq.atracks.map(t => ({ t, audio: true }))), log = []; let nV = 0, nA = 0;
+  for (const { t, audio } of tracks) {
+    if (chs(ch(t, 'ClipTrack', 'TransitionItems', 'TrackItems'), 'TrackItem').length) log.push('트랜지션이 있는 트랙은 트랜지션을 빼고 잘랐습니다. 필요하면 다시 넣어 주세요.');
+    const tl = ch(t, 'ClipTrack', 'TransitionItems', 'TrackItems'); if (tl) tl.parentNode.removeChild(tl);
+    const olds = P.items(t), made = [];
+    for (const node of olds) {
+      const c = P.info(node), cl = P.clipEl(node).clip, outN = cl && cl.getElementsByTagName('OutPoint')[0];
+      let rate = outN && c.end > c.start ? (+outN.textContent - c.inPoint) / (c.end - c.start) : 1; if (!(rate > 0.05 && rate < 20)) rate = 1;
+      for (const g of segs) {
+        const a = Math.max(c.start, g.a), b = Math.min(c.end, g.b); if (b - a < fr * 0.5) continue;
+        const ds = snap(g.d + a - g.a), de = snap(g.d + b - g.a); if (de <= ds) continue;
+        const n = P.cloneClip(node), i0 = Math.round(c.inPoint + (a - c.start) * rate); P.setTimes(n, ds, de, i0);
+        if (Math.abs(rate - 1) > 1e-6) { const o = P.clipEl(n).clip.getElementsByTagName('OutPoint')[0]; if (o) o.textContent = String(Math.round(i0 + (de - ds) * rate)); }
+        made.push(n); if (audio) nA++; else nV++;
+      }
+      removeFromTrack(P, t, node);
+    }
+    P.addToTrack(t, made);
+  }
+  // 복제본이 이펙트 데이터(Lumetri 등)를 통째로 들고 있어 조각 수만큼 파일이 불어난다. 프리미어처럼 같은 해시의 내용은 처음 것 하나에만 둔다
+  const seen = new Set(); for (const e of P.root.querySelectorAll('[BinaryHash]')) { if (!e.textContent.trim()) continue; const h = e.getAttribute('BinaryHash'); if (seen.has(h)) e.textContent = ''; else seen.add(h); }
+  const props = ch(seq.node, 'Node', 'Properties');
+  for (const k of ['MZ.WorkOutPoint', 'Monitor.ProgramZoomOut']) { const e = ch(props, k); if (e) e.textContent = String(cur); }
+  const wi = ch(props, 'MZ.WorkInPoint'); if (wi) wi.textContent = '0';
+  return { segs: segs.map(g => ({ src: [g.a, g.b], dst: [g.d, g.d + g.len] })), total: cur, video: nV, audio: nA, log: [...new Set(log)] };
+}
+
+/* ================= 컷편집 분석: 프리미어 받아쓰기 단어 → 발화 단위 → 규칙 판단 → 남길 구간 =================
+   시간은 모두 원본 시퀀스 틱. 받아쓰기 단어 시각은 소스 기준이라 클립의 속도(예: 103%)로 나눠 타임라인으로 옮긴다. */
+const CUT_STRENGTH = { // 초. pre/post = 말 앞뒤 여유, maxGap = 이보다 긴 공백만 줄인다, qa = 질문 뒤 남길 간격
+  soft: { maxGap: 0.7, pre: 0.14, post: 0.24, qa: 0.6 },
+  normal: { maxGap: 0.45, pre: 0.1, post: 0.18, qa: 0.45 },
+  strong: { maxGap: 0.3, pre: 0.08, post: 0.14, qa: 0.35 },
+};
+const CUT_FILLER = /^(어+|음+|으+음*|에+|엄+)[.,?!…~]*$/;
+const CUT_NG = /다시\s*(할게|갈게|하겠|해\s*볼|한\s*번)|(^|\s)다시[.!]?$|죄송합니다|한\s*번\s*더\s*(할게|갈게|하겠)|엔지|(^|\s)NG|잠깐만요?|잠시만요|(^|\s)컷[.!]?$|스탠바이|큐[.!]?$/;
+/* 받아쓰기가 있는 오디오 트랙 목록: [{track, name, words:[{t,e,w}] (타임라인), clip}] */
+function cutVoices(P, seq) {
+  const out = [];
+  seq.atracks.forEach((t, ti) => {
+    const words = [], clips = []; let name = '', any = false;
+    for (const node of P.items(t)) {
+      const c = P.info(node), cl = P.clipEl(node).clip, outN = cl && cl.getElementsByTagName('OutPoint')[0]; let rate = outN && c.end > c.start ? (+outN.textContent - c.inPoint) / (c.end - c.start) : 1; if (!(rate > 0.05 && rate < 20)) rate = 1;
+      clips.push({ start: c.start, end: c.end, inPoint: c.inPoint, rate, media: c.media }); // 미리듣기: 타임라인 시각 → 소스 파일 시각
+      if (!c.masterUid) continue; const ws = readTranscript(P, c.masterUid); if (!ws) continue; any = true; if (!name || c.end - c.start > 60 * TICKS) name = c.name;
+      for (const w of ws) { const t0 = c.start + (w.t - c.inPoint) / rate, t1 = t0 + w.d / rate; if (t1 > c.start && t0 < c.end) words.push({ t: Math.max(c.start, t0), e: Math.min(c.end, t1), w: w.w }); }
+    }
+    if (any) out.push({ track: ti, name, words: words.sort((a, b) => a.t - b.t), clips });
+  });
+  return out;
+}
+/* 단어 → 발화 단위(대략 한 문장). 문장부호에서, 또는 긴 쉼(0.6초)에서 나눈다 */
+function cutUnits(words) {
+  const units = []; let cur = null;
+  words.forEach((w, k) => {
+    const prev = words[k - 1], gap = prev ? (w.t - prev.e) / TICKS : 99;
+    if (!cur || gap > 0.6 || /[.?!]$/.test(prev.w) || (gap > 0.35 && cur.text.length > 45)) { cur = { words: [], text: '' }; units.push(cur); }
+    const filler = CUT_FILLER.test(w.w) && (gap >= 0.12 || !words[k + 1] || (words[k + 1].t - w.e) / TICKS >= 0.12);
+    cur.words.push(Object.assign({}, w, filler ? { filler: true } : {})); cur.text += (cur.text ? ' ' : '') + w.w;
+  });
+  units.forEach((u, i) => { u.i = i; u.t0 = u.words[0].t; u.t1 = u.words[u.words.length - 1].e; u.q = /\?$/.test(u.text); u.d = 'keep'; u.why = ''; u.by = ''; });
+  return units;
+}
+const cutNorm = s => String(s || '').replace(/[\s.,!?~"'·…:;()\-]/g, '');
+/* 규칙 판단: NG 말, 군더더기만 있는 단위, 같은 말을 다시 시작한 재시도(앞의 것을 뺀다). 판단이 애매하면 남긴다 */
+function cutRules(units) {
+  for (const u of units) {
+    const body = u.words.filter(w => !w.filler);
+    if (!body.length) { u.d = 'drop'; u.why = '군더더기만 있음'; u.by = 'rule'; continue; }
+    if (CUT_NG.test(u.text)) { u.d = 'drop'; u.why = 'NG·재촬영 말'; u.by = 'rule'; }
+  }
+  for (let i = 0; i < units.length; i++) {
+    const a = cutNorm(units[i].text); if (a.length < 6 || units[i].d === 'drop') continue;
+    for (let j = i + 1; j < units.length && j <= i + 6 && units[j].t0 - units[i].t1 < 60 * TICKS; j++) {
+      const b = cutNorm(units[j].text); if (b.length < 6) continue;
+      const head = Math.min(a.length, b.length, 14), same = lcsAlign(a.slice(0, head), b.slice(0, head)).len / head;
+      if (same >= 0.75 && a.length <= b.length * 1.15) { units[i].d = 'drop'; units[i].why = `${j}번에서 같은 말을 다시 함 (재시도)`; units[i].by = 'rule'; break; }
+    }
+  }
+  return units;
+}
+/* 남길 구간 만들기. 남긴 단위의 단어(군더더기 제외)를 이어, maxGap보다 긴 공백만 pre+post 만큼으로 줄인다 */
+function cutKeep(units, strength, end) {
+  const o = typeof strength === 'object' ? strength : CUT_STRENGTH[strength] || CUT_STRENGTH.normal, pre = o.pre * TICKS, post = o.post * TICKS, maxGap = o.maxGap * TICKS;
+  const ws = []; for (const u of units) if (u.d !== 'drop') for (const w of u.words) if (!w.filler || u.d === 'review') ws.push(Object.assign({ q: u.q && w === u.words[u.words.length - 1] }, w));
+  const out = []; let cur = null;
+  ws.forEach((w, k) => {
+    const prev = ws[k - 1], gap = prev ? w.t - prev.e : Infinity, tail = prev && prev.q ? Math.max(post, o.qa * TICKS - pre) : post;
+    if (cur && (gap <= maxGap || gap <= tail + pre)) { cur.t1 = Math.max(cur.t1, w.e + post); cur.wb = w.e; return; } // 자연스러운 짧은 간격은 그대로
+    if (cur) cur.t1 = prev.e + tail; // 긴 공백(또는 뺀 말)은 앞 말 뒤 여유 + 뒷말 앞 여유만 남긴다
+    cur = { t0: Math.max(0, w.t - pre, cur ? cur.t1 : 0), t1: w.e + post, wa: w.t, wb: w.e }; out.push(cur); // wa/wb = 첫 말 시작·끝 말 끝 (경계 조정의 기준)
+  });
+  if (cur) cur.t1 = Math.min(end || Infinity, cur.t1);
+  return out.filter(r => r.t1 - r.t0 > 0.05 * TICKS);
+}
+/* 경계 검수 목록: 이어 붙인 곳마다 사이에서 뺀 것과 자동 점검 결과. 문장 중간 연결·말을 뺀 곳을 먼저 본다 */
+function cutBoundaries(units, keep) {
+  const out = [], T = TICKS;
+  for (let k = 0; k + 1 < keep.length; k++) {
+    const a = keep[k], b = keep[k + 1], cut = units.filter(u => u.t0 < b.wa && u.t1 > a.wb);
+    const removed = cut.filter(u => u.d === 'drop'), fill = cut.some(u => u.d !== 'drop' && u.words.some(w => w.filler && w.t >= a.wb && w.e <= b.wa));
+    const before = units.find(u => u.t0 <= a.wb && u.t1 >= a.wb - 1), endsSentence = !before || /[.?!]$|(다|요|죠|까|네|군요)[.,]?$/.test(before.text.trim());
+    const flags = [];
+    if (removed.length && !endsSentence) flags.push('문장 중간에서 이어 붙임');
+    if (removed.length) flags.push('말을 뺀 곳');
+    if (fill) flags.push('군더더기를 뺀 곳');
+    const left = (a.t1 - a.wb + b.wa - b.t0) / T; if (left < 0.12) flags.push('간격이 매우 짧음');
+    out.push({ k, a, b, removed: removed.map(u => u.i), gapCut: (b.t0 - a.t1) / T, left, flags, prio: (flags.includes('문장 중간에서 이어 붙임') ? 3 : 0) + (removed.length ? 2 : 0) + (fill ? 1 : 0) });
+  }
+  return out;
+}
+/* docx 대본의 글자만 (문단마다 줄바꿈) */
+async function docxText(bytes) {
+  const xml = new TextDecoder().decode(await unzipEntry(bytes, /^word\/document\.xml$/));
+  const doc = new DOMParser().parseFromString(xml.replace(/<\/w:p>/g, '</w:p>\n'), 'application/xml'); const t = [];
+  for (const p of doc.getElementsByTagName('w:p')) { let s = ''; for (const r of p.getElementsByTagName('*')) { if (r.tagName === 'w:t') s += r.textContent; else if (r.tagName === 'w:tab') s += ' '; else if (r.tagName === 'w:br') s += '\n'; } t.push(s); }
+  return t.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /* 템플릿의 소스(배경 그림 등)가 다른 컴퓨터 경로로 적혀 있는 경우: 찾아서, 템플릿 폴더 기준의 이 PC 경로로 바꿔 적는다 */
 const BSL = String.fromCharCode(92);
 function isWinPath(p) { p = String(p || ''); return p.length > 2 && ((p[1] === ':' && (p[2] === BSL || p[2] === '/')) || p.slice(0, 2) === BSL + BSL); }
@@ -1645,7 +1770,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, layerX };
+const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
