@@ -1601,7 +1601,7 @@ function buildChapters(M, Tp, an, tpl, plan, opt) {
 
 /* ================= 자막 타이밍: 브루 XML의 시점을 실제 발화·컷에 맞춘다 =================
    재료: 교정 XML(문구 기준) · .vrew(단어별 발화 시간, mp3 기준 초) · mp3 파형(쉼) · 프로젝트(컷 위치). 문구는 한 글자도 바꾸지 않는다. */
-const ST = { mp3Delay: 0.047, snapBack: 7, snapFwd: 2, lateSnap: 5, onsetWin: 0.15, longGap: 2.5, tail: 0.3, maxChars: 22, minDur: 0.9 };
+const ST = { mp3Delay: 0.047, snapBack: 7, snapBackQuiet: 15, snapFwd: 2, lateSnap: 5, onsetWin: 0.15, longGap: 2.5, tail: 0.3, maxChars: 22, minDur: 0.9 };
 // 브루가 한 단어를 두 자막 줄로 쪼개 놓은 경우, 뒷줄 첫머리에 홀로 설 수 없는 말이 온다 ("시스템 | 상에서의", "아니에요? | 라고")
 const GLUE = /^(상에서|상으로|상의|상에|에서|에게|에는|으로|로서|로써|라고|라는|라든지|라든가|이라고|이라는|이라든지|처럼|까지|부터|보다|이랑|랑|마저|조차|밖에)|^(은|는|을|를|의|에|도|만|와|과|요)[,.?!]?$/; // 홀로 쓰인 "이"·"가"는 "이 생활을"처럼 다른 낱말일 수 있어 빼고
 const ejText = (ej, a, b) => { let t = ''; for (let i = a; i <= b; i++) t += (i > a && !ej[i].glue ? ' ' : '') + ej[i].text; return t; }; // 붙은 조각은 띄어 쓰지 않는다
@@ -1765,8 +1765,12 @@ function timeSegments(o) {
   out.forEach((s, k) => {
     let f = F(s.sp0); const prev = out[k - 1];
     const back = cutF.filter(c => c <= f && c >= f - ST.snapBack).pop(), fwd = cutF.find(c => c > f && c <= f + ST.snapFwd), late = cutF.find(c => c > f && c <= f + ST.lateSnap);
+    // 앞 자막의 말이 컷 전에 끝났는지: 브루의 단어 끝은 다음 말 직전까지 늘어나 있는 일이 많아(컷을 넘어 보임), 마지막 단어의 "시작"이 컷 전인지로 본다
+    const prevBefore = c => !prev || F(ej[prev.b].t0) < c;
+    const farBack = back == null ? cutF.filter(c => c < f && c >= f - ST.snapBackQuiet).pop() : null; // 7프레임보다 먼 컷: 컷부터 말 시작까지 조용할 때만
     if (fwd != null) { s.snap = `컷 ${f}→${fwd}`; f = fwd; }
-    else if (back != null && (!prev || F(prev.sp1) <= back)) { s.snap = `컷 ${f}→${back}`; f = back; }
+    else if (back != null && prevBefore(back)) { s.snap = `컷 ${f}→${back}`; f = back; }
+    else if (farBack != null && prevBefore(farBack) && env && ![...Array(f - farBack).keys()].some(q => vAt(env, (farBack + q) / fps))) { s.snap = `컷 ${f}→${farBack} (컷 뒤 무음)`; f = farBack; }
     else if (late != null && env && ![...Array(late - f).keys()].some(q => vAt(env, (f + q) / fps))) { s.snap = `컷 ${f}→${late} (무음)`; f = late; }
     if (k === 0 && f < F(1.0)) { f = 0; s.snap = '영상 시작'; }
     s.start = Math.max(f, prevEnd + 1, k ? out[k - 1].start + 1 : 0); prevEnd = s.start;
