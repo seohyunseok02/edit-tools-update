@@ -524,7 +524,11 @@ class Proj {
     const segs = given || splitSegs(text, parts, opt && opt.auto);
     // 영문·숫자 한 글자뿐인 조각("0", "X")은 텍스트 데이터에서 글자로 읽히지 않아 넣기에 실패한다. 앞 조각 끝의 띄어쓰기를 가져오고, 없으면(직접 준 조각이 아닐 때만) 뒤에 한 칸을 붙인다.
     for (let i = 0; i < segs.length; i++) { const s = segs[i]; if (s.length !== 1 || s === ' ' || s.charCodeAt(0) > 127) continue; const pv = i > 0 ? segs[i - 1] : ''; if (pv.length > 1 && pv.endsWith(' ')) { segs[i - 1] = pv.slice(0, -1); segs[i] = ' ' + s; } else if (!given) segs[i] = s + ' '; }
-    text = segs.join('');
+    // 디자인에 공백만 든 서식 조각이 따로 있는 경계("앞" | " " | "강조")는 그 조각이 띄어쓰기 역할을 한다. 앞뒤 조각의 띄어쓰기까지 두면 두 칸이 되므로 뺀다
+    const all = fbParse(this.blob(L.param)).strings.map(s => s.text); let at = -1; const idx = parts.map(p => (at = all.indexOf(p, at + 1)));
+    const gapRun = parts.map((_, i) => i + 1 < parts.length && idx[i] >= 0 && idx[i + 1] > idx[i] && all.slice(idx[i] + 1, idx[i + 1]).some(t => t.length && !t.trim()));
+    gapRun.forEach((g, i) => { if (!g) return; if (segs[i].length > 1) segs[i] = segs[i].replace(/ +$/, ''); if (segs[i + 1] && segs[i + 1].length > 1) segs[i + 1] = segs[i + 1].replace(/^ +/, ''); });
+    text = segs.map((s, i) => s + (gapRun[i] ? ' ' : '')).join('');
     // 같은 글자의 조각이 섞이지 않게 먼저 임시 표식으로 바꾼 뒤 실제 글자를 넣는다
     let nb = this.blob(L.param); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, '@@seg' + i + '@@', parts[i]); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, segs[i] || ' ', '@@seg' + i + '@@');
     const skv = ch(L.param, 'StartKeyframeValue'); const h = skv.getAttribute('BinaryHash'), own = skv.textContent.trim() !== '';
@@ -1033,6 +1037,12 @@ function splitSegs(text, parts, auto) {
     for (let i = 0; i < k; i++) { acc += Math.max(1, len(parts[i].trim())); const target = i === k - 1 ? Infinity : all * acc / total, seg = []; while (wi < words.length && used + len(words[wi]) / 2 <= target) { seg.push(words[wi]); used += len(words[wi]); wi++; } out.push(seg); }
     const hi = k >= 3 ? 1 : 0; // 강조색 구간이 비지 않게 한다
     if (!out[hi].length) { const next = out.findIndex((x, i) => i > hi && x.length); if (next > 0) out[hi].push(out[next].shift()); else { const prev = out.findIndex(x => x.length > 1); if (prev >= 0 && prev < hi) out[hi].push(out[prev].pop()); } }
+    // 낱말이 구간 수 이상이면 빈 구간을 남기지 않는다(빈 구간은 공백 한 칸으로 채워져, 디자인의 공백 조각과 겹쳐 두 칸이 된다). 이웃 구간에서 낱말을 하나씩 빌려 온다
+    if (words.length >= k) for (let pass = 0; pass < k && out.some(x => !x.length); pass++) out.forEach((x, i) => {
+      if (x.length) return; const L = out.slice(0, i).map((y, j) => [y, j]).reverse().find(([y]) => y.length > 1), R = out.slice(i + 1).map((y, j) => [y, i + 1 + j]).find(([y]) => y.length > 1);
+      if (L && (!R || i - L[1] <= R[1] - i)) { for (let j = L[1]; j < i; j++) out[j + 1].unshift(out[j].pop()); } else if (R) { for (let j = R[1]; j > i; j--) out[j - 1].push(out[j].shift()); }
+    });
+    if (words.length < k && words.length > 1) { const flat = out.flat(); out.forEach((x, i) => { out[i] = flat[i] ? [flat[i]] : []; }); } // 낱말이 모자라면 한 구간에 하나씩 앞에서부터 넣고 빈 구간은 문장 끝으로 보낸다(가운데 빈 칸이 두 칸으로 보이지 않게)
     const txt = out.map(x => x.join(' '));
     return txt.map((t, i) => t ? (txt.slice(i + 1).some(Boolean) ? t + ' ' : t) : ' ');
   }
