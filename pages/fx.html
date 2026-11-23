@@ -2382,18 +2382,46 @@ st.learned = [];
 // 팀원마다 업체 이름을 조금씩 다르게 적어도(띄어쓰기·기호·대소문자·끝의 의원/병원/클리닉) 같은 업체 기록으로 모은다
 const clientKey = n => { let k = String(n || '').normalize('NFC').toLowerCase().replace(/[\s\-_.·,()\[\]{}'"]/g, ''); const t = k.replace(/(의원|병원|클리닉|clinic)$/, ''); if (t.length >= 2) k = t; return k || String(n || ''); };
 const fxText = e => [e.small, e.main, e.main2].filter(Boolean).join(' / ');
+/* 문구가 얼마나 같은지(0~1): 띄어쓰기·문장부호·줄 나눔은 빼고 글자로 본다 */
+const fxNorm = s => String(s || '').replace(/[\s.,!?~"'“”‘’·…\/=]/g, '');
+function fxSim(p, q) { p = fxNorm(p); q = fxNorm(q); return p && q ? window.Engine.lcsAlign(p, q).len / Math.max(p.length, q.length) : 0; }
 function fxDiff(a, b) {
-  const used = new Set(), out = [];
-  for (const g of a) {
-    let k = b.findIndex((e, i) => !used.has(i) && Math.abs(e.t - g.t) < 1);
-    if (k < 0) k = b.findIndex((e, i) => !used.has(i) && e.said && e.said === g.said);
-    if (k < 0) { out.push({ kind: 'removed', said: g.said, design: g.design, text: fxText(g) }); continue; }
-    used.add(k); const e = b[k];
+  // 글자가 없는 것(이름표 같은 그래픽을 효과자막 디자인으로 읽은 것)은 효과자막이 아니므로 배우지 않는다
+  a = a.filter(e => fxNorm(fxText(e))); b = b.filter(e => fxNorm(fxText(e)));
+  // 짝짓기 1단계: 문구가 절반 이상 같은 것끼리, 순서를 지키며(엇갈리지 않게) 짝짓는다. 사람이 영상을 더 잘라 내면 수정본의 시간이 수십 초씩 당겨지므로 시간은 보지 않는다.
+  const S = a.map(g => b.map(e => fxSim(fxText(g), fxText(e)))), n = a.length, m = b.length, D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let k = m - 1; k >= 0; k--) D[i][k] = Math.max(D[i + 1][k], D[i][k + 1], S[i][k] >= 0.5 ? D[i + 1][k + 1] + S[i][k] : -1);
+  const pair = new Map(); for (let i = 0, k = 0; i < n && k < m;) { if (S[i][k] >= 0.5 && D[i][k] === D[i + 1][k + 1] + S[i][k]) { pair.set(i, k); i++; k++; } else if (D[i][k] === D[i + 1][k]) i++; else k++; }
+  // 2단계: 남은 것은 앞뒤 짝의 시간 차이(잘라 낸 만큼)를 보정해 1.5초 안에 있고, 같은 말 위에 있거나 문구가 30% 이상 같을 때만 문구 고침으로 본다. 그 밖에는 사람이 지우고 새로 넣은 것이다.
+  const shiftAt = i => { let p = -1, q = -1; for (const [x] of pair) { if (x < i && x > p) p = x; if (x > i && (q < 0 || x < q)) q = x; } const near = p >= 0 ? p : q; return near >= 0 ? b[pair.get(near)].t - a[near].t : 0; };
+  const taken = new Set(pair.values());
+  for (let i = 0; i < n; i++) {
+    if (pair.has(i)) continue; const t = a[i].t + shiftAt(i); let best = -1, bs = -1;
+    let lo = -1, hi = m; for (const [x, k] of pair) { if (x < i && k > lo) lo = k; if (x > i && k < hi) hi = k; } // 순서를 지키는 범위 안에서만
+    for (let k = lo + 1; k < hi; k++) { if (taken.has(k) || Math.abs(b[k].t - t) >= 1.5) continue; const same = !!(a[i].said && b[k].said === a[i].said); if (S[i][k] < 0.3 && !same) continue; const sc = S[i][k] + (same ? 0.3 : 0); if (sc > bs) { bs = sc; best = k; } }
+    if (best >= 0) { pair.set(i, best); taken.add(best); }
+  }
+  const ua = new Set(pair.keys()), used = new Set(pair.values()), out = [];
+  for (const [i, k] of [...pair].sort((x, y) => x[0] - y[0])) {
+    const g = a[i], e = b[k];
     if (e.design !== g.design) out.push({ kind: 'design', said: e.said, from: g.design, to: e.design, text: fxText(e) });
     if (fxText(e) !== fxText(g)) out.push({ kind: 'text', said: e.said, design: e.design, was: fxText(g), now: fxText(e) });
   }
-  b.forEach((e, i) => { if (!used.has(i)) out.push({ kind: 'added', said: e.said, design: e.design, text: fxText(e) }); });
-  return a.length && used.size < a.length * 0.3 ? null : out; // 거의 다 다르면 다른 프로젝트를 잘못 집은 것으로 보고 배우지 않는다
+  a.forEach((g, i) => { if (!ua.has(i)) out.push({ kind: 'removed', said: g.said, design: g.design, text: fxText(g) }); });
+  b.forEach((e, k) => { if (!used.has(k)) out.push({ kind: 'added', said: e.said, design: e.design, text: fxText(e) }); });
+  // 같은 영상인지: 문구를 다 새로 써도 같은 영상이면 효과자막이 같은 말·같은 때에 있다. 원본 효과자막의 30%도 수정본과 겹치지 않으면 다른 프로젝트를 잘못 집은 것으로 보고 배우지 않는다
+  const same = a.filter((g, i) => ua.has(i) || b.some(e => g.said && e.said === g.said)).length;
+  return a.length && same < a.length * 0.3 ? null : out;
+}
+/* 이미 쌓인 기록을 쓸 때 거른다(기록 파일은 그대로 둔다): 글자 없는 항목, 예전 버전이 읽은 숨긴 견본 줄("/ 첨자 자막"), 예전 짝짓기가 만든 엉뚱한 문구 고침 */
+function fxClean(items) {
+  const strip = s => String(s || '').replace(/\s*\/\s*첨자\s*자막\s*$/, '').trim();
+  return (items || []).map(x => x && Object.assign({}, x, x.was != null ? { was: strip(x.was) } : {}, x.text != null ? { text: strip(x.text) } : {})).filter(x => {
+    if (!x || x.kind === 'summary') return false;
+    if (x.kind === 'text') return fxNorm(x.now) && fxNorm(x.was) && x.was !== x.now && fxSim(x.was, x.now) >= 0.3;
+    if (x.kind === 'added' || x.kind === 'removed' || x.kind === 'design') return !!fxNorm(x.text);
+    return true;
+  });
 }
 async function learnFromEdits() {
   const LA = learnApi(); if (!LA) return 0; let n = 0;
@@ -2413,7 +2441,7 @@ async function learnFromEdits() {
 async function loadLearned(fresh) {
   const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA || !st.cur) { box.hidden = true; return; }
   try {
-    const r = await LA.load({ tool: 'fx', client: clientKey(st.cur) }); st.learned = (r.items || []).filter(x => x.kind !== 'summary'); // summary = 학습 현황용 프로젝트 요약
+    const r = await LA.load({ tool: 'fx', client: clientKey(st.cur) }); st.learned = fxClean(r.items); // summary(학습 현황용)와 잘못 읽힌 예전 기록은 빼고 쓴다
     box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (st.learned.length ? `편집자들이 이 업체 영상에서 고친 기록 ${st.learned.length}건(${r.people}명)을 요청문에 넣습니다.` : '아직 이 업체에서 고친 기록이 없습니다. 만든 프로젝트를 프리미어에서 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
   } catch (e) { box.hidden = true; }
 }

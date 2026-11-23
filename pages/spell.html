@@ -2076,12 +2076,22 @@ function wordPairs(a, b) { // 글자 단위로 맞춘 뒤, 달라진 곳을 앞�
   }
   return out;
 }
+/* 맞춤법 고침으로 볼 수 있는 짝인가: 사람이 그 자리 자막을 다른 문장으로 통째로 바꾼 것(예: "씹는 면이 닳거나" → "임플란트")은 배우지 않는다.
+   받는 것: 띄어쓰기만 다름 / 글자가 절반 이상 같음(길이도 비슷) / 한글 수 표현을 숫자로(예: "스무살" → "20살", 끝말이 같을 때) */
+const SP_NUM = /(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|스물|스무|서른|마흔|쉰|백|천|만|반|하나|둘|셋|넷)/;
+function spellPairOk(was, now) {
+  was = String(was || '').trim(); now = String(now || '').trim(); if (!was || !now || was === now) return false;
+  const a = was.replace(/\s+/g, ''), b = now.replace(/\s+/g, ''); if (a === b) return true;
+  if (/\d/.test(b) && !/\d/.test(a) && SP_NUM.test(a)) { let k = 0; while (k < a.length && k < b.length && a[a.length - 1 - k] === b[b.length - 1 - k]) k++; return k >= 1; }
+  const r = a.length / b.length; if (r < 0.67 || r > 1.5) return false; // 말을 덧붙이거나 줄인 것(예: "10시에" → "10시에 자는 게")은 맞춤법 고침이 아니다
+  return E.lcsAlign(a, b).len / Math.max(a.length, b.length) >= 0.5;
+}
 async function learnFromEdits() {
   const LA = learnApi(); if (!LA) return 0; let n = 0;
   for (const p of await LA.pending('spell')) {
     try {
       const A = textMap(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj')), B = textMap(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name)), items = []; let same = 0;
-      for (const [k, t] of A) { const u = B.get(k); if (u == null) continue; same++; if (u === t) continue; for (const x of wordPairs(t, u)) if (!items.some(y => y.was === x.was && y.now === x.now)) items.push(Object.assign({ kind: 'pair' }, x)); }
+      for (const [k, t] of A) { const u = B.get(k); if (u == null) continue; same++; if (u === t) continue; for (const x of wordPairs(t, u)) if (spellPairOk(x.was, x.now) && !items.some(y => y.was === x.was && y.now === x.now)) items.push(Object.assign({ kind: 'pair' }, x)); }
       if (A.size && same < A.size * 0.3) continue; // 자막 자리가 거의 다 다르면 다른 프로젝트를 잘못 집은 것으로 보고 배우지 않는다
       await LA.put({ tool: 'spell', client: '공통', rec: p.id, mtime: p.mtime, items }); n += items.length;
     } catch (e) {}
@@ -2092,7 +2102,7 @@ async function loadLearned(fresh) {
   const LA = learnApi(), box = $('learnNote'); st.learned = []; if (!LA) return;
   try {
     const r = await LA.load({ tool: 'spell', client: '공통' }), cnt = new Map();
-    for (const x of r.items || []) { if (x.kind !== 'pair' || typeof x.was !== 'string' || typeof x.now !== 'string') continue; const k = x.was + '\u0000' + x.now; cnt.set(k, (cnt.get(k) || 0) + 1); }
+    for (const x of r.items || []) { if (x.kind !== 'pair' || typeof x.was !== 'string' || typeof x.now !== 'string' || !spellPairOk(x.was, x.now)) continue; /* 예전에 잘못 배운 짝은 쓰지 않는다(기록은 그대로) */ const k = x.was + '\u0000' + x.now; cnt.set(k, (cnt.get(k) || 0) + 1); }
     st.learned = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 80).map(([k, n]) => { const [was, now] = k.split('\u0000'); return { was, now, n }; });
     box.hidden = false; box.textContent = (fresh ? `프리미어에서 고친 내용을 새로 ${fresh}건 배웠습니다. ` : '') + (st.learned.length ? `편집자들이 직접 고친 낱말 ${st.learned.length}가지(${r.people}명)를 검사 요청문에 넣습니다.` : '아직 편집자가 고친 기록이 없습니다. 고친 프로젝트를 프리미어에서 다시 고쳐 저장하면 다음부터 배웁니다.') + (r.shared ? '' : ' (공유 학습 폴더가 연결되지 않아 이 PC의 기록만 씁니다)');
   } catch (e) { box.hidden = true; }
