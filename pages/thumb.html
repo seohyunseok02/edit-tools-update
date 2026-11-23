@@ -1274,6 +1274,39 @@ function buildHighlight(P, an, plan, opt) {
   return { segs: segs.map(g => ({ start: g.d, end: g.d + g.len })), total, shift, video: nV, audio: nA, log };
 }
 
+/* ================= GPT 연결 (편집기 공통) =================
+   OpenAI 호환 주소로 보낸다. 기본은 이 PC의 OmniRoute(ChatGPT 구독, 추가 요금 없음). 예전에 sk- API 키를 쓰던 PC는 OpenAI 주소를 그대로 쓴다.
+   키를 기억하게 하면 연결 설정을 팀 공유 학습 폴더(aiconf)에 남기고, 키가 없는 PC는 그것을 받아 쓴다(OmniRoute PC의 127.0.0.1 은 그 PC 이름으로 바꾼다). */
+const GPT_DEFAULT = { base: 'http://127.0.0.1:20128/v1', model: 'cx/gpt-6.2-astra-high', openai: 'https://api.openai.com/v1' };
+function gptUrl(doc) { const e = (doc || document).getElementById('gptBase'); return ((e && e.value.trim()) || GPT_DEFAULT.base).replace(/\/+$/, '') + '/'; }
+function gptSetup(doc) {
+  doc = doc || document; const box = doc.getElementById('gptBox'), $ = id => doc.getElementById(id); if (!box || box.dataset.sub || !$('gptKey')) return; box.dataset.sub = '1';
+  const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+  let oldKey = ''; try { oldKey = (JSON.parse(ls.get('shorts-ai') || '{}') || {}).key || ''; } catch {}
+  const h3 = box.querySelector('h3'); if (h3) h3.textContent = 'GPT 자동 연결 (ChatGPT 구독 · OmniRoute)';
+  const keyRow = $('gptKey').closest('.row'), row = doc.createElement('div'); row.className = 'row';
+  row.innerHTML = '<label for="gptBase">주소</label><input type="text" id="gptBase" spellcheck="false" style="flex:2;min-width:160px">'; box.insertBefore(row, keyRow);
+  const lab = keyRow && keyRow.querySelector('label'); if (lab) lab.textContent = '키'; $('gptKey').placeholder = 'OmniRoute 대시보드에서 만든 키';
+  $('gptBase').value = ls.get('gpt-base') || (/^sk-/.test(oldKey) ? GPT_DEFAULT.openai : GPT_DEFAULT.base);
+  const sel = $('gptModel'), addOpt = v => { if (sel && v && ![...sel.options].some(o => o.value === v)) { const o = doc.createElement('option'); o.value = o.textContent = v; sel.append(o); } };
+  if (sel && !sel.options.length) addOpt(GPT_DEFAULT.model);
+  const note = $('gptNote'); if (note) note.textContent = '이 PC의 OmniRoute를 거쳐 ChatGPT 구독 안에서 씁니다(추가 요금 없음). 키는 OmniRoute 대시보드에서 만듭니다. 주소를 https://api.openai.com/v1 로 바꾸고 sk- 키를 넣으면 API 요금이 나가는 방식으로도 쓸 수 있습니다.';
+  const LA = (() => { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } })(); let loading = false;
+  const share = async () => { const key = $('gptKey').value.trim(); if (loading || !LA || !key || !$('gptKeep').checked || /^sk-/.test(key)) return; try { const me = (await LA.config()).me; await LA.put({ tool: 'aiconf', client: '공통', rec: 'gpt', items: [{ kind: 'gpt', at: Date.now(), who: me, base: $('gptBase').value.trim(), model: sel ? sel.value : '', key }] }); } catch {} };
+  $('gptBase').addEventListener('change', () => { ls.set('gpt-base', $('gptBase').value.trim()); share(); });
+  for (const id of ['gptKey', 'gptKeep', 'gptModel']) if ($(id)) $(id).addEventListener('change', share);
+  if (LA) (async () => {
+    try {
+      const me = (await LA.config()).me; if ($('gptKey').value.trim()) return; // 이 PC에 기억한 키가 있으면 그대로
+      const g = ((await LA.load({ tool: 'aiconf', client: '공통' })).items || []).filter(x => x && x.kind === 'gpt' && x.key && x.base).sort((a, b) => b.at - a.at)[0]; if (!g) return;
+      let base = g.base; if (g.who && g.who !== me && /\/\/(127\.0\.0\.1|localhost)[:/]/.test(base)) base = base.replace(/\/\/(127\.0\.0\.1|localhost)/, '//' + String(g.who).replace(/_[^_]*$/, ''));
+      loading = true; $('gptBase').value = base; ls.set('gpt-base', base); addOpt(g.model); if (sel && g.model) sel.value = g.model;
+      $('gptKey').value = g.key; $('gptKeep').checked = true; for (const id of ['gptKey', 'gptModel']) if ($(id)) $(id).dispatchEvent(new Event('change')); loading = false;
+      if (note) note.textContent = g.who && g.who !== me ? `팀 공유 설정을 받아 왔습니다: ${String(g.who).replace(/_[^_]*$/, '')} PC의 OmniRoute를 씁니다. 그 PC가 켜져 있고 OmniRoute가 다른 PC 접속을 허용해야 합니다. 안 되면 복사·붙여넣기 방식을 쓰세요.` : '이 PC에 기억해 둔 연결 설정을 다시 불러왔습니다.';
+    } catch { loading = false; }
+  })();
+}
+
 /* ================= 컷편집: 남길 구간(원본 타임라인 기준)만 모든 영상·오디오 트랙에서 같은 지점으로 잘라 앞에서부터 이어 붙인다 =================
    keep = [{t0,t1}] (원본 시퀀스 틱, 시간 순서). 클립의 이펙트·볼륨은 복제본에 그대로 따라간다. 원래 클립은 트랙에서 빼기만 한다(파일에는 남음). */
 function buildCut(P, seq, keep) {
@@ -1797,7 +1830,7 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
@@ -1954,9 +1987,10 @@ async function applyClips(j) { $('sumText').value = formatSummary(j); $('sumBox'
 const IS_LOCAL = !(window.claude && window.claude.use);
 function mode() { const v = $('aiMode').value; if (v === 'claude' && !st.ask) return 'manual'; if (v === 'gpt' && !IS_LOCAL) return 'manual'; return v || 'manual'; }
 function setupModes() {
+  window.Engine.gptSetup(document); // 주소 칸·기본 모델·팀 공유 연결 설정 (처음 한 번만)
   const sel = $('aiMode'), saved = store.get('shorts-ai') || {}, keep = sel.value || saved.mode; sel.textContent = '';
   const add = (v, t, off) => { const o = el('option', { value: v, text: t }); if (off) o.disabled = true; sel.append(o); };
-  if (st.ask) add('claude', 'Claude 자동'); add('gpt', IS_LOCAL ? 'GPT 연결 (OpenAI API)' : 'GPT 연결 — 내 PC용 파일에서만 됩니다', !IS_LOCAL); add('manual', '복사·붙여넣기 (ChatGPT 등)');
+  if (st.ask) add('claude', 'Claude 자동'); add('gpt', IS_LOCAL ? 'GPT 자동 연결 (구독)' : 'GPT 연결 — 내 PC용 파일에서만 됩니다', !IS_LOCAL); add('manual', '복사·붙여넣기 (ChatGPT 등)');
   const ok = v => [...sel.options].some(o => o.value === v && !o.disabled); sel.value = ok(keep) ? keep : st.ask ? 'claude' : IS_LOCAL ? 'gpt' : 'manual';
   if (saved.key && !$('gptKey').value) { $('gptKey').value = saved.key; $('gptKeep').checked = true; }
   if (saved.model && ![...$('gptModel').options].length) $('gptModel').append(el('option', { value: saved.model, text: saved.model }));
@@ -1966,21 +2000,21 @@ function modeChanged() { const m = mode(); $('gptBox').hidden = m !== 'gpt'; $('
 function saveAi() { const o = { mode: $('aiMode').value, model: $('gptModel').value }; if ($('gptKeep').checked) o.key = $('gptKey').value.trim(); store.set('shorts-ai', o); }
 $('aiMode').onchange = modeChanged; $('gptKeep').onchange = saveAi; $('gptKey').onchange = saveAi; $('gptModel').onchange = saveAi;
 async function gptFetch(pathname, body) {
-  const key = $('gptKey').value.trim(); if (!key) throw new Error('OpenAI API 키를 먼저 넣어 주세요.');
-  let r; try { r = await fetch('https://api.openai.com/v1/' + pathname, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body: body ? JSON.stringify(body) : undefined }); } catch (e) { throw new Error('OpenAI에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.'); }
+  const key = $('gptKey').value.trim(); if (!key) throw new Error('키를 먼저 넣어 주세요 (OmniRoute 대시보드에서 만든 키).');
+  let r; try { r = await fetch(window.Engine.gptUrl(document) + pathname, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body: body ? JSON.stringify(body) : undefined }); } catch (e) { throw new Error((/127\.0\.0\.1|localhost/.test(window.Engine.gptUrl(document)) ? 'OmniRoute에 연결하지 못했습니다. OmniRoute가 켜져 있는지 확인해 주세요 (PowerShell에서 omniroute serve). 안 되면 복사·붙여넣기 방식을 쓰세요.' : 'GPT 주소에 연결하지 못했습니다. OmniRoute가 있는 PC가 켜져 있는지, 인터넷 연결이 되는지 확인해 주세요.')); }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) { const m = (j.error && j.error.message) || ('오류 ' + r.status); throw new Error(r.status === 401 ? 'API 키가 맞지 않습니다. (' + m + ')' : r.status === 429 ? 'API 크레딧이 없거나 한도를 넘었습니다. platform.openai.com 의 Billing 에서 충전해야 합니다. ChatGPT 구독과는 별개입니다. (' + m + ')' : m); }
+  if (!r.ok) { const m = (j.error && j.error.message) || ('오류 ' + r.status); throw new Error(r.status === 401 ? '키가 맞지 않습니다. OmniRoute 대시보드에서 만든 키를 넣어 주세요. (' + m + ')' : r.status === 429 ? '사용 한도에 걸렸습니다. 잠시 뒤 다시 하거나 복사·붙여넣기 방식을 쓰세요. (' + m + ')' : m); }
   return j;
 }
 $('btnModels').onclick = async () => {
   $('gptNote').textContent = '모델 목록을 불러오는 중…';
-  try { const j = await gptFetch('models'), cur = $('gptModel').value, list = (j.data || []).filter(m => /^(gpt|o[0-9]|chatgpt)/.test(m.id) && !/audio|realtime|image|tts|transcri|embed|search|moderation|instruct|codex/.test(m.id)).sort((a, b) => (b.created || 0) - (a.created || 0));
+  try { const j = await gptFetch('models'), cur = $('gptModel').value, list = (j.data || []).filter(m => /(^|\/)(gpt|o[0-9]|chatgpt)/.test(m.id) && !/audio|realtime|image|tts|transcri|embed|search|moderation|instruct|codex/.test(m.id)).sort((a, b) => (b.created || 0) - (a.created || 0));
     if (!list.length) throw new Error('이 키로 쓸 수 있는 대화 모델이 없습니다.');
     $('gptModel').textContent = ''; for (const m of list) $('gptModel').append(el('option', { value: m.id, text: m.id })); if (list.some(m => m.id === cur)) $('gptModel').value = cur; saveAi(); $('gptNote').textContent = `모델 ${list.length}개를 불러왔습니다. 위쪽이 최신입니다.`;
   } catch (e) { $('gptNote').textContent = e.message; }
 };
 async function askGpt(prompt) {
-  if (!$('gptKey').value.trim()) throw new Error('OpenAI API 키를 먼저 넣어 주세요.'); const model = $('gptModel').value; if (!model) throw new Error('"모델 불러오기"를 눌러 모델을 고른 뒤 다시 눌러 주세요.');
+  if (!$('gptKey').value.trim()) throw new Error('키를 먼저 넣어 주세요 (OmniRoute 대시보드에서 만든 키).'); const model = $('gptModel').value; if (!model) throw new Error('"모델 불러오기"를 눌러 모델을 고른 뒤 다시 눌러 주세요.');
   const msg = [{ role: 'user', content: prompt }]; let j;
   try { j = await gptFetch('chat/completions', { model, messages: msg, response_format: { type: 'json_object' } }); } catch (e) { if (!/response_format|json_object|not supported/i.test(e.message)) throw e; j = await gptFetch('chat/completions', { model, messages: msg }); }
   const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '', a = text.indexOf('{'), b = text.lastIndexOf('}'); if (a < 0 || b <= a) throw new Error('GPT의 답을 읽지 못했습니다. 다시 눌러 보세요.');
