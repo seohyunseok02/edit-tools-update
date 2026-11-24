@@ -100,6 +100,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     <div class="drop" id="dropF" tabindex="0" role="button"><b>교정 XML · .vrew · mp3 · 프로젝트(.prproj)</b><span id="nameF">여기에 끌어다 놓거나 눌러서 고르세요</span></div>
     <input type="file" id="fileF" accept=".xml,.vrew,.mp3,.wav,.m4a,.prproj" multiple hidden>
     <div class="kv" id="fileList"></div>
+    <div class="row"><button id="btnReset">처음부터 다시 (넣은 파일 모두 비우기)</button></div>
     <div class="kv" id="fixBox" hidden>
       <h3>자막 교정 <small class="note">브루에서 내보낸 XML 그대로라면 먼저 교정하세요</small></h3>
       <p class="note">맞춤법·띄어쓰기를 GPT로 고치고, 줄 끝의 온점·반점을 지웁니다. 자막 수·시간·줄 나눔과 말투는 그대로입니다. 뜻이 바뀔 만큼 달라진 줄은 받지 않고 원래대로 둡니다.</p>
@@ -1988,6 +1989,7 @@ $('btnFixCopy').onclick = async () => { try { await navigator.clipboard.writeTex
 $('btnFixPaste').onclick = async () => { show('err1', ''); try { const raw = $('fixIn').value, a = raw.indexOf('{'), b = raw.lastIndexOf('}'); if (a < 0 || b <= a) throw new Error('{ } 로 된 답이 보이지 않습니다'); const body = raw.slice(a, b + 1); let ans; try { ans = JSON.parse(body); } catch (e1) { ans = JSON.parse(body.split('“').join('"').split('”').join('"')); } await applyFix(ans); } catch (er) { show('err1', '붙여넣은 답을 읽지 못했습니다. ' + er.message); } };
 $('btnFixTrim').onclick = async () => { show('err1', ''); try { await applyFix({ lines: [] }); } catch (er) { show('err1', er.message); } };
 $('btnFixSave').onclick = () => { if (!st.fix) return; const a = el('a', { href: URL.createObjectURL(new Blob([st.fix.xml], { type: 'text/xml' })), download: st.fix.name }); document.body.append(a); a.click(); a.remove(); };
+$('btnReset').onclick = () => { if (!Object.keys(st.files).length || confirm('넣은 파일과 지금까지 한 작업을 모두 비우고 처음부터 할까요?')) location.reload(); }; // 이 탭만 새로 연다(다른 편집기는 그대로)
 $('dropF').onclick = () => $('fileF').click(); $('dropF').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileF').click(); } };
 $('fileF').onchange = e => { const xs = [...e.target.files]; e.target.value = ''; if (xs.length) addFiles(xs); };
 $('dropF').ondragover = e => { e.preventDefault(); $('dropF').classList.add('over'); }; $('dropF').ondragleave = () => $('dropF').classList.remove('over');
@@ -2002,6 +2004,9 @@ async function analyze() {
     if (!st.vrew.words.length) throw new Error('.vrew 파일에서 단어 시간을 찾지 못했습니다');
     const P = await E.Proj.fromBytes(await buf(F.proj), F.proj.name); st.cuts = E.cutTimes(P); st.seqName = E.analyzeMid(P).seq.name;
     const ac = new OfflineAudioContext(1, 16000, 8000), ab = await ac.decodeAudioData((await buf(F.mp3)).buffer); st.audioDur = ab.duration; st.env = E.energyEnvelope(ab.getChannelData(0), ab.sampleRate);
+    // 다른 영상의 브루·음성 파일을 넣으면 길이가 짧아 끝 자막이 뭉개진다: 자막 길이와 크게 다르면 멈춘다
+    const capSec = st.cap.clips[st.cap.clips.length - 1].end / st.cap.fps, mm = s => `${Math.floor(s / 60)}분 ${Math.round(s % 60)}초`;
+    for (const [nm, f, sec] of [['브루 파일', F.vrew, st.vrew.duration], ['음성(mp3)', F.mp3, st.audioDur]]) if (sec && sec < capSec * 0.8) throw new Error(`${nm} "${f.name}"은 ${mm(sec)}인데 자막 XML은 ${mm(capSec)}까지 있습니다. 다른 영상의 파일 같습니다. "처음부터 다시"를 누르고 이 영상의 파일을 넣어 주세요.`);
     run(null, 'rule');
     const c = st.cap, r = st.r;
     $('info').textContent = `자막 ${c.clips.length}개 · ${c.ntsc ? (c.tb * 1000 / 1001).toFixed(3) : c.tb}fps · 컷 ${st.cuts.length}곳 (프로젝트 시퀀스 "${st.seqName}") · 음성 ${Math.round(st.audioDur)}초 · MP3 시간 차이 ${Math.round(r.offset.offset * 1000)}ms (${r.offset.why}) · 브루 단어와 못 맞춘 어절 ${r.unaligned}개`;
@@ -2155,7 +2160,7 @@ $('btnBuild').onclick = async () => {
     const r = st.r, d = new Date(), stamp = String(d.getFullYear()).slice(2) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
     const base = st.files.xml.name.replace(/\.xml$/i, '').replace(/_(xml|맞춤법.*|교정.*|띄어쓰기.*)$/i, ''), out = base + '_' + stamp + '_자막타이밍정리_v01', enc = s => new TextEncoder().encode(s);
     const xml = E.writeCaptionXml(st.cap, r.out, (st.cap.seqName || base) + '_자막타이밍정리_v01');
-    const check = E.parseCaptionXml(xml); if (check.clips.length !== r.out.length) throw new Error('만든 XML을 다시 읽어 보니 자막 수가 다릅니다');
+    const check = E.parseCaptionXml(xml); if (check.clips.length !== r.out.length) { const b = r.out.find(s => !(s.end > s.start) || !String(s.text).trim()); throw new Error('만든 XML을 다시 읽어 보니 자막 수가 다릅니다' + (b ? `. 시간이 뭉개진 자막: "${b.text}". 브루·음성 파일이 이 영상 것이 맞는지 확인하고 "처음부터 다시"를 눌러 다시 넣어 주세요.` : '')); }
     const files = [{ name: out + '.xml', data: enc(xml) }, { name: out + '.srt', data: enc('﻿' + E.srtOf(r.out, st.cap.fps)) }, { name: out + '_검수메모.txt', data: enc('﻿' + memoText(r, base, stamp)) }, { name: out + '_변경내역.csv', data: enc(csvText(r)) }];
     const msg = await saveBlob(zipFiles(files), out + '.zip');
     // 만든 결과를 기억해 둔다: 나중에 이 자막을 고친 편집 프로젝트를 효과자막·맞춤법 탭에서 열면 고친 나누기를 배운다
