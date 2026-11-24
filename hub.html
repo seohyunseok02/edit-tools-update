@@ -5,98 +5,537 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>편집 도구 모음</title>
 <style>
-/* 위쪽 탭 줄에서 편집기를 고르면 아래에 그 편집기가 열린다. 한 번 연 편집기는 탭을 옮겨도 작업 내용이 그대로 남는다. */
-:root{--bg:#eef0f4;--panel:#fbfcfe;--ink:#171b24;--mute:#4f5868;--line:#d2d8e2;--accent:#1f5fbf;--accent-ink:#fff}
-@media (prefers-color-scheme:dark){:root{--bg:#10131a;--panel:#181c26;--ink:#e6eaf2;--mute:#98a2b5;--line:#2b3140;--accent:#7fb0ff;--accent-ink:#0a1830;color-scheme:dark}}
+/* 왼쪽 메뉴에서 편집기를 고르면 오른쪽에 열린다(롱폼은 작업 순서대로). 위쪽: 지금 작업(영상 폴더)·업체·설정. 한 번 연 편집기는 탭을 옮겨도 작업 내용이 남는다. */
+:root{--bg:#eef0f4;--panel:#fbfcfe;--ink:#171b24;--mute:#4f5868;--line:#d2d8e2;--accent:#1f5fbf;--accent-ink:#fff;--ok:#17663f;--soft:#e3ebf8;--warn:#8a3a0a;--warn-soft:#fbe9d9}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--panel:#181c26;--ink:#e6eaf2;--mute:#a4adbf;--line:#2b3140;--accent:#7fb0ff;--accent-ink:#0a1830;--ok:#7fd8a6;--soft:#1d2a40;--warn:#f0a36b;--warn-soft:#3a2415;color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font:15px/1.4 "Malgun Gothic",system-ui,sans-serif}
-nav{display:flex;gap:4px;align-items:center;padding:8px 12px 0;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
-nav b{margin-right:12px;font-size:15px}
-nav button{font:inherit;color:var(--mute);background:none;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 16px;cursor:pointer}
-nav button:hover{color:var(--ink)}
-nav button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-nav button[aria-selected=true]{color:var(--ink);font-weight:700;background:var(--bg);border-color:var(--line);box-shadow:inset 0 3px 0 var(--accent)}
-#ver{margin-left:auto;color:var(--mute);font-size:12px;padding:0 4px}
-#upd{font:inherit;font-weight:700;color:var(--accent-ink);background:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:6px 14px;margin-bottom:6px;cursor:pointer}
-.learn{font:inherit;font-size:12px;color:var(--mute);background:none;border:1px solid var(--line);border-radius:8px;padding:4px 10px;margin:0 0 6px auto;cursor:pointer}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#top{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#top b.app{font-size:15px;margin-right:6px}
+.chip{background:none;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--ink);max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.empty{color:var(--accent);border-color:var(--accent);border-style:dashed}
+.chip:hover{border-color:var(--accent)}
+#ver{color:var(--mute);font-size:12px;padding:0 4px}
+#upd{font-weight:700;color:var(--accent-ink);background:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:6px 14px}
+.learn{font-size:12px;color:var(--mute);background:none;border:1px solid var(--line);border-radius:8px;padding:4px 10px}
 .learn:hover{color:var(--ink)}
 .learn[data-state=none],.learn[data-state=off]{color:var(--accent);border-color:var(--accent)}
-.learn + #ver{margin-left:8px}
-.learn + .learn{margin-left:8px}
 #notify[aria-pressed=false]{color:var(--mute);border-style:dashed}
+.spacer{flex:1}
+#body{flex:1;min-height:0;display:flex}
+nav{width:184px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:10px 8px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+nav h2{font-size:12px;color:var(--mute);font-weight:600;margin:12px 8px 4px;letter-spacing:.02em}
+nav h2:first-child{margin-top:2px}
+nav button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:7px 10px;color:var(--ink)}
+[data-tone=long]{--t:#1f5fbf;--t-ink:#fff;--t-soft:#e3ebf8}[data-tone=shorts]{--t:#0a7a5c;--t-ink:#fff;--t-soft:#dff2ea}[data-tone=tools]{--t:#6b4fc8;--t-ink:#fff;--t-soft:#ece8fb}
+@media (prefers-color-scheme:dark){[data-tone=long]{--t:#7fb0ff;--t-ink:#0a1830;--t-soft:#1d2a40}[data-tone=shorts]{--t:#5fd3a8;--t-ink:#06231a;--t-soft:#15322a}[data-tone=tools]{--t:#b4a3ff;--t-ink:#1b1240;--t-soft:#2a2448}}
+nav h2[data-tone]::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t);margin-right:6px;vertical-align:1px}
+nav button:hover{background:var(--t-soft,var(--soft))}
+nav button[aria-selected=true]{background:var(--t-bg,var(--t,var(--accent)));color:var(--t-ink,var(--accent-ink));font-weight:700}
+.tone{display:grid;grid-template-columns:70px auto auto auto 1fr;gap:8px;align-items:center}
+.tone input[type=color]{width:42px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
+.tone input[type=color]:disabled{opacity:.35;cursor:default}
+.tone .sw{height:26px;border-radius:7px;font-size:12px;display:grid;place-items:center;font-weight:700}
+nav .n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid currentColor;font-size:11px;flex:none;opacity:.8}
+nav .done{margin-left:auto;font-size:12px;color:var(--ok)}
+nav button[aria-selected=true] .done{color:inherit}
+#right{flex:1;min-width:0;display:flex;flex-direction:column}
+#workbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;background:var(--t-soft,var(--soft));border-bottom:1px solid var(--line);border-left:4px solid var(--t,var(--accent));font-size:14px}
+#workbar .pri{background:var(--t-bg,var(--t,var(--accent)))!important;border-color:transparent!important;color:var(--t-ink,var(--accent-ink))!important}
+#workbar[hidden]{display:none}
+#workbar select{max-width:420px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--panel)}
+#workbar .pri{background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:7px;padding:5px 14px;font-weight:600}
+#workbar .note{color:var(--mute);font-size:13px}
 main{flex:1;min-height:0;position:relative}
-
 iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
 iframe[hidden]{display:none}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:0;width:min(640px,94vw);max-height:88vh}
+dialog::backdrop{background:rgba(10,14,22,.45)}
+dialog .hd{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line)}
+dialog .hd h3{margin:0;font-size:17px;flex:1}
+dialog .bd{padding:14px 18px;display:flex;flex-direction:column;gap:12px;overflow:auto;max-height:calc(88vh - 60px)}
+dialog fieldset{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+dialog legend{font-weight:700;padding:0 4px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row label{min-width:52px;color:var(--mute);font-size:14px}
+.row input[type=text],.row input[type=password],.row select{flex:1;min-width:160px;border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--bg)}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:5px 12px}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.x{background:none;border:0;font-size:20px;line-height:1;color:var(--mute);padding:2px 6px}
+.note{color:var(--mute);font-size:13px;margin:0}
+.okm{color:var(--ok)}.bad{color:var(--warn)}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.steps li{display:flex;gap:8px}
+.steps li b{min-width:92px}
+.files{font-size:13px;color:var(--mute);max-height:180px;overflow:auto;margin:0;padding-left:18px}
+#login{position:fixed;inset:0;z-index:50;background:var(--bg);display:grid;place-items:center;padding:16px}
+#login[hidden]{display:none}
+#login .card{width:min(380px,100%);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+#login h1{font-size:20px;margin:0}
+#login input,#login select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:var(--bg)}
+#login .btn.pri{padding:10px;font-size:15px}
+#login .err{color:var(--warn);font-size:13px;min-height:1em;margin:0}
+.users{width:100%;border-collapse:collapse;font-size:14px}
+.users td,.users th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}
+.users th{color:var(--mute);font-weight:500}
+.users .off td{opacity:.5}
+.adminOnly[hidden]{display:none}
 </style>
 </head>
 <body>
-<nav role="tablist" aria-label="편집기"><b>편집 도구 모음</b></nav>
-<main id="main"></main>
+<div id="top"><b class="app">편집 도구 모음</b>
+  <button class="chip" id="workChip" type="button" title="지금 작업하는 영상 폴더 (눌러서 고르기·바꾸기)"></button>
+  <button class="chip" id="clientChip" type="button" title="지금 업체 (눌러서 바꾸기)"></button>
+  <span class="spacer"></span>
+  <button class="chip" id="userChip" type="button" hidden></button>
+  <button class="learn" id="setBtn" type="button">⚙ 설정</button>
+  <span id="ver"></span>
+</div>
+<div id="body">
+  <nav role="tablist" aria-label="편집기" aria-orientation="vertical"></nav>
+  <div id="right">
+    <div id="workbar" hidden></div>
+    <main id="main"></main>
+  </div>
+</div>
+
+<dialog id="setDlg" aria-labelledby="setTitle">
+  <div class="hd"><h3 id="setTitle">설정</h3><button class="x" type="button" data-close aria-label="닫기">×</button></div>
+  <div class="bd">
+    <fieldset id="sMe" hidden><legend>내 계정</legend>
+      <p class="note" id="meLine"></p>
+      <div class="row"><label for="meOld">지금 비밀번호</label><input type="password" id="meOld" autocomplete="current-password"></div>
+      <div class="row"><label for="meNew">새 비밀번호</label><input type="password" id="meNew" autocomplete="new-password"><button class="btn" type="button" id="mePw">비밀번호 바꾸기</button></div>
+      <div class="row"><button class="btn" type="button" id="meOut">로그아웃</button><span class="note" id="meState"></span></div>
+    </fieldset>
+    <fieldset id="sPeople" class="adminOnly" hidden><legend>사람 관리 (관리자만)</legend>
+      <table class="users"><thead><tr><th>이름</th><th>권한</th><th></th></tr></thead><tbody id="uList"></tbody></table>
+      <div class="row"><input type="text" id="uName" placeholder="새 사람 이름" style="flex:1"><input type="password" id="uPw" placeholder="처음 비밀번호" autocomplete="new-password" style="flex:1"><select id="uRole"><option value="user">일반</option><option value="admin">관리자</option></select><button class="btn pri" type="button" id="uAdd">추가</button></div>
+      <p class="note" id="uState">처음 비밀번호를 알려 주고, 로그인한 뒤 ⚙ 설정 → 내 계정에서 바꾸게 하세요.</p>
+    </fieldset>
+    <fieldset class="adminOnly"><legend>GPT 연결 (모든 편집기가 같이 씀)</legend>
+      <div class="row"><label for="sBase">주소</label><input type="text" id="sBase" spellcheck="false"></div>
+      <div class="row"><label for="sKey">키</label><input type="password" id="sKey" autocomplete="off" placeholder="OmniRoute 대시보드에서 만든 키"></div>
+      <div class="row"><label for="sModel">모델</label><input type="text" id="sModel" list="sModels" spellcheck="false"><datalist id="sModels"></datalist><button class="btn" id="sTest" type="button">연결 확인</button></div>
+      <label class="note"><input type="checkbox" id="sKeep"> 이 컴퓨터에 키 기억하기 (기억하면 팀 공유 폴더로 다른 PC에도 연결 설정이 갑니다)</label>
+      <p class="note" id="sState"></p>
+    </fieldset>
+    <fieldset><legend>업체</legend>
+      <div class="row"><label for="sClient">업체</label><select id="sClient"></select></div>
+      <p class="note">고르면 효과자막·소제목 편집기가 이 업체로 맞춰집니다. 작업 폴더를 고르면 파일 이름에서 업체를 알아서 고릅니다.</p>
+    </fieldset>
+    <fieldset><legend>색 (묶음별 포인트 색)</legend>
+      <div id="sTones"></div>
+      <div class="row"><button class="btn" type="button" id="sToneReset">기본 색으로</button><span class="note">고르면 바로 바뀝니다. 그라데이션을 켜면 두 색이 버튼·메뉴에 섞여 나옵니다. 글자색(흰색/검정)은 배경에 맞춰 알아서 고릅니다.</span></div>
+    </fieldset>
+    <fieldset class="adminOnly"><legend>팀 공유 학습 폴더</legend><div class="row" id="sLearn"></div></fieldset>
+    <fieldset><legend>업데이트 알림</legend><div class="row" id="sNotify"></div></fieldset>
+    <div class="row" style="justify-content:flex-end"><button class="btn pri" type="button" id="sSave">저장</button></div>
+  </div>
+</dialog>
+
+<div id="login" hidden role="dialog" aria-modal="true" aria-labelledby="lgTitle">
+  <form class="card" id="lgForm" autocomplete="on">
+    <h1 id="lgTitle">편집 도구 모음 로그인</h1>
+    <p class="note" id="lgSub"></p>
+    <div id="lgNameBox"><label class="note" for="lgName">이름</label><select id="lgName"></select><input type="text" id="lgNew" placeholder="관리자 이름" hidden autocomplete="username"></div>
+    <div><label class="note" for="lgPw">비밀번호</label><input type="password" id="lgPw" autocomplete="current-password"></div>
+    <div id="lgPw2Box" hidden><label class="note" for="lgPw2">비밀번호 한 번 더</label><input type="password" id="lgPw2" autocomplete="new-password"></div>
+    <button class="btn pri" type="submit" id="lgGo">로그인</button>
+    <p class="err" id="lgErr" role="alert"></p>
+  </form>
+</div>
+
+<dialog id="workDlg" aria-labelledby="workTitle">
+  <div class="hd"><h3 id="workTitle">작업 (영상 폴더)</h3><button class="x" type="button" data-close aria-label="닫기">×</button></div>
+  <div class="bd">
+    <p class="note">영상 하나의 폴더(예: <code>F:\서현석\01_project\서울나온피부과\261103\2순위</code>)를 고르면, 그 안의 <code>02_project</code>·<code>03_mp3</code>·<code>04_자막</code> 파일을 찾아 각 편집기 위쪽에서 바로 넣을 수 있게 합니다. 파일은 읽기만 하고 바꾸지 않습니다.</p>
+    <div class="row"><button class="btn pri" type="button" id="wPick">영상 폴더 고르기</button><button class="btn" type="button" id="wReload">다시 읽기</button><button class="btn" type="button" id="wClear">작업 닫기</button></div>
+    <p class="note" id="wState"></p>
+    <ul class="steps" id="wSteps"></ul>
+    <details><summary class="note">찾은 파일</summary><ul class="files" id="wFiles"></ul></details>
+  </div>
+</dialog>
 <script>
 'use strict';
-const TOOLS = [['cut', '컷편집'], ['fx', '효과자막'], ['spell', '맞춤법 검사'], ['highlight', '하이라이트'], ['shorts', '쇼츠'], ['extract', '추출쇼츠'], ['subtitle', '소제목'], ['subtime', '자막 타이밍'], ['thumb', '썸네일 캡쳐'], ['nukki', '누끼 따기'], ['fonts', '글꼴 점검'], ['stats', '학습 현황']];
-const nav = document.querySelector('nav'), main = document.getElementById('main'), frames = {};
+/* 롱폼은 실제 작업 순서대로: 컷편집 → 자막 올리기(자막 타이밍) → 효과자막 → 맞춤법 → 소제목·구간 → 하이라이트 */
+const GROUPS = [['롱폼 (작업 순서)', [['cut', '컷편집'], ['subtime', '자막 타이밍'], ['fx', '효과자막'], ['spell', '맞춤법 검사'], ['subtitle', '소제목·구간'], ['highlight', '하이라이트']], true],
+  ['쇼츠', [['shorts', '쇼츠'], ['extract', '추출쇼츠']]], ['도구', [['thumb', '썸네일 캡쳐'], ['nukki', '누끼 따기'], ['fonts', '글꼴 점검']]], ['', [['stats', '학습 현황']]]];
+const TOOLS = GROUPS.flatMap(g => g[1]);
+const toneOf = id => GROUPS[0][1].some(t => t[0] === id) ? 'long' : GROUPS[1][1].some(t => t[0] === id) ? 'shorts' : 'tools'; // 묶음별 포인트 색
+const nav = document.querySelector('nav'), main = document.getElementById('main'), top_ = document.getElementById('top'), frames = {}, $ = id => document.getElementById(id);
+const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+let cur = null;
 function open(id) {
-  for (const [k] of TOOLS) { document.getElementById('tab-' + k).setAttribute('aria-selected', String(k === id)); if (frames[k]) frames[k].hidden = k !== id; }
-  if (!frames[id]) { const f = document.createElement('iframe'); f.src = 'pages/' + id + '.html'; f.title = TOOLS.find(t => t[0] === id)[1]; main.append(f); frames[id] = f; }
+  cur = id;
+  for (const [k] of TOOLS) { $('tab-' + k).setAttribute('aria-selected', String(k === id)); if (frames[k]) frames[k].hidden = k !== id; }
+  if (!frames[id]) { const f = document.createElement('iframe'); f.src = 'pages/' + id + '.html'; f.title = TOOLS.find(t => t[0] === id)[1]; f.addEventListener('load', () => onFrameLoad(id)); main.append(f); frames[id] = f; }
   try { localStorage.setItem('hub-tab', id); } catch {}
+  $('workbar').dataset.tone = toneOf(id); drawWorkbar();
 }
-for (const [id, name] of TOOLS) { const b = document.createElement('button'); b.id = 'tab-' + id; b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = name; b.onclick = () => open(id); nav.append(b); }
-// 버전 표시와 새 버전 알림 (프로그램 안에서만; 예전 프로그램 틀에는 이 기능이 없을 수 있다)
-const VER_LABEL = 'ver.1124.34'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
-const ver = document.createElement('span'); ver.id = 'ver'; nav.append(ver);
+for (const [title, items, numbered] of GROUPS) {
+  const tone = toneOf(items[0][0]);
+  if (title) { const h = document.createElement('h2'); h.textContent = title; h.dataset.tone = tone; nav.append(h); }
+  items.forEach(([id, name], i) => { const b = document.createElement('button'); b.id = 'tab-' + id; b.type = 'button'; b.setAttribute('role', 'tab'); b.dataset.id = id; b.dataset.tone = tone;
+    b.innerHTML = (numbered ? `<span class="n">${i + 1}</span>` : '') + `<span>${name}</span><span class="done" hidden>✓</span>`; b.onclick = () => open(id); nav.append(b); });
+}
+document.querySelectorAll('dialog [data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+
+/* ================= 설정: GPT 연결 =================
+   편집기들은 각자 GPT 칸을 숨기고 여기 값을 받아 쓴다(engine.js hubGpt). 옛 저장값(gpt-base, shorts-ai, cut-ai)도 같이 맞춰 둔다. */
+const GPT_DEF = { base: 'http://127.0.0.1:20128/v1', model: 'cx/gpt-6.2-astra-high' };
+const paidKey = k => /^sk-(proj|svcacct|admin)-/.test(k) || /^sk-[\w-]{40,}$/.test(k);
+const gptSubs = [];
+const hubSettings = window.hubSettings = {
+  gpt: () => ls.get('hub-gpt', null) || migrateGpt(),
+  onGpt(fn) { gptSubs.push(fn); try { fn(this.gpt()); } catch {} },
+  open: () => openSettings(),
+  client: () => ls.get('work-client', ''),
+};
+function migrateGpt() { // 예전에 편집기마다 넣어 둔 값을 모아 온다
+  const s = ls.get('shorts-ai', {}) || {}, c = ls.get('cut-ai', {}) || {}; let base = ''; try { base = localStorage.getItem('gpt-base') || ''; } catch {}
+  const key = s.key || c.key || '', g = { base: base || (paidKey(key) ? 'https://api.openai.com/v1' : GPT_DEF.base), key, model: s.model || c.model || GPT_DEF.model, keep: !!key };
+  ls.set('hub-gpt', g); return g;
+}
+function saveGpt(g, quiet) {
+  const keep = g.keep ? g : Object.assign({}, g, { key: '' }); ls.set('hub-gpt', keep);
+  try { localStorage.setItem('gpt-base', g.base); } catch {}
+  for (const k of ['shorts-ai', 'cut-ai']) { const o = ls.get(k, {}) || {}; o.model = g.model; if (g.keep) o.key = g.key; else delete o.key; ls.set(k, o); }
+  for (const fn of gptSubs) try { fn(g); } catch {}
+  if (!quiet) shareGpt(g);
+}
+async function shareGpt(g) { // 팀 공유: OmniRoute 키만(유료 OpenAI 키는 올리지 않음)
+  if (!window.learnApi || !g.keep || !g.key || paidKey(g.key) || /api\.openai\.com/.test(g.base)) return;
+  try { const me = (await learnApi.config()).me; await learnApi.put({ tool: 'aiconf', client: '공통', rec: 'gpt', items: [{ kind: 'gpt', at: Date.now(), who: me, base: g.base, model: g.model, key: g.key }] }); } catch {}
+}
+async function loadSharedGpt() { // 키가 없는 PC: 팀 공유 설정을 받아 온다(OmniRoute PC의 127.0.0.1 은 그 PC 이름으로)
+  const g = hubSettings.gpt(); if (!window.learnApi) return;
+  try {
+    const me = (await learnApi.config()).me;
+    if (g.key) { if (/\/\/(127\.0\.0\.1|localhost)[:/]/.test(g.base)) shareGpt(g); return; } // 이 PC가 OmniRoute PC면 다시 알린다
+    const x = ((await learnApi.load({ tool: 'aiconf', client: '공통' })).items || []).filter(i => i && i.kind === 'gpt' && i.key && i.base).sort((a, b) => b.at - a.at)[0]; if (!x) return;
+    let base = x.base; if (x.who && x.who !== me) base = base.replace(/\/\/(127\.0\.0\.1|localhost)/, '//' + String(x.who).replace(/_[^_]*$/, ''));
+    saveGpt({ base, key: x.key, model: x.model || GPT_DEF.model, keep: true }, true);
+  } catch {}
+}
+function openSettings() {
+  const g = hubSettings.gpt(); $('sBase').value = g.base; $('sKey').value = g.key || ''; $('sModel').value = g.model; $('sKeep').checked = !!g.keep; $('sState').textContent = '';
+  drawClients(); drawTones(); applyRole(); drawPeople(); $('setDlg').showModal();
+}
+$('setBtn').onclick = openSettings;
+$('sTest').onclick = async () => {
+  const base = $('sBase').value.trim().replace(/\/+$/, ''), key = $('sKey').value.trim(); $('sState').className = 'note'; $('sState').textContent = '확인하는 중…';
+  try { const r = await fetch(base + '/models', { headers: { Authorization: 'Bearer ' + key } }); if (r.status === 401) throw new Error('키가 맞지 않습니다'); if (!r.ok) throw new Error('응답 ' + r.status);
+    const ids = ((await r.json()).data || []).map(m => m.id); $('sModels').innerHTML = ids.map(i => `<option value="${i.replace(/"/g, '')}">`).join('');
+    $('sState').className = 'note okm'; $('sState').textContent = `연결됐습니다 (모델 ${ids.length}개)` + (ids.length && !ids.includes($('sModel').value.trim()) ? ' · 지금 모델 이름이 목록에 없습니다' : '');
+  } catch (e) { $('sState').className = 'note bad'; $('sState').textContent = '연결하지 못했습니다: ' + e.message + '. 주소의 PC가 켜져 있고 OmniRoute가 실행 중인지 확인하세요.'; }
+};
+$('sSave').onclick = () => {
+  if (isAdmin()) saveGpt({ base: $('sBase').value.trim() || GPT_DEF.base, key: $('sKey').value.trim(), model: $('sModel').value.trim() || GPT_DEF.model, keep: $('sKeep').checked });
+  const c = $('sClient').value; if (c !== hubSettings.client()) setClient(c);
+  $('setDlg').close();
+};
+
+/* ================= 업체: 한 번 고르면 효과자막·소제목이 따라간다 ================= */
+let clientList = [];
+async function loadClients() {
+  if (!window.learnApi) return;
+  try { const items = (await learnApi.load({ tool: 'fxclient', client: '공통' })).items || [], last = {};
+    for (const x of items) if (x && x.name) { const p = last[x.name]; if (!p || (x.at || 0) > (p.at || 0)) last[x.name] = x; }
+    clientList = Object.values(last).filter(x => !x.deleted).map(x => x.name).sort((a, b) => a.localeCompare(b, 'ko'));
+  } catch {}
+}
+function drawClients() { const s = $('sClient'), c = hubSettings.client(), names = [...new Set(clientList.concat(c ? [c] : []))]; s.innerHTML = '<option value="">(고르지 않음)</option>' + names.map(n => `<option>${n.replace(/</g, '')}</option>`).join(''); s.value = c; }
+function drawClientChip() { const c = hubSettings.client(), b = $('clientChip'); b.textContent = c ? '업체: ' + c : '업체 고르기'; b.classList.toggle('empty', !c); }
+$('clientChip').onclick = openSettings;
+function setClient(name, quiet) { ls.set('work-client', name || ''); drawClientChip(); for (const id in frames) pushClient(id); if (!quiet) savePrefs(); }
+function pushClient(id, tries = 40) { // 편집기의 업체 목록이 늦게 차므로 잠깐 기다렸다가 고른다
+  const name = hubSettings.client(), f = frames[id]; if (!name || !f) return;
+  let d; try { d = f.contentDocument; } catch { return; } const s = d && d.getElementById('client'); if (!s || s.tagName !== 'SELECT') return;
+  if (s.value === name) return; const o = [...s.options].find(o => o.value === name || o.textContent.trim() === name);
+  if (!o) { if (tries > 0) setTimeout(() => pushClient(id, tries - 1), 500); return; }
+  s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/* ================= 작업: 영상 폴더 하나 =================
+   폴더 규칙: 02_project(.prproj) · 03_mp3 · 04_자막(.xml .vrew) · 대본(.docx .txt). 01_영상(원본 영상)은 읽지 않는다.
+   고른 폴더는 다음에 켜도 기억한다(권한을 다시 물을 수 있음). */
+const work = { dir: null, files: [], label: '' };
+const idb = () => new Promise((res, rej) => { const r = indexedDB.open('hub-work', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const kvSet = async (k, v) => { const db = await idb(); await new Promise(r => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = r; t.onerror = r; }); };
+const kvGet = async k => { const db = await idb(); return new Promise(r => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => r(q.result); q.onerror = () => r(null); }); };
+async function scan(dir) {
+  const out = [];
+  async function walk(h, rel, depth) { for await (const [name, e] of h.entries()) {
+    if (e.kind === 'directory') { if (depth < 3 && !/^01_|영상|footage|Adobe Premiere Pro (Auto-Save|Video Previews|Audio Previews)/i.test(name)) await walk(e, rel + name + '/', depth + 1); continue; }
+    if (/\.(prproj|xml|vrew|mp3|wav|m4a|docx|txt|zip)$/i.test(name)) { const f = await e.getFile(); out.push({ name, rel: rel + name, kind: name.split('.').pop().toLowerCase(), file: f, at: f.lastModified }); } } }
+  await walk(dir, '', 0); return out.sort((a, b) => b.at - a.at);
+}
+const STAGES = [['cut', '컷편집', /컷편집/], ['subtime', '자막 타이밍', /자막타이밍|타이밍정리/], ['fx', '효과자막', /효과자막/], ['spell', '맞춤법 검사', /맞춤법/], ['subtitle', '소제목·구간', /소제목/], ['highlight', '하이라이트', /하이라이트/]];
+function guessClient(files) { const n = files.find(f => f.kind === 'prproj' && /_\d{6}_/.test(f.name)); return n ? n.name.split('_')[0] : ''; }
+function guessLabel(files) { const n = files.find(f => /_\d{6}_/.test(f.name)); if (!n) return work.dir ? work.dir.name : ''; const p = n.name.split('_'); return p.slice(0, 3).join(' '); }
+async function useDir(dir, silent) {
+  work.dir = dir; $('wState').textContent = '파일을 찾는 중…';
+  try { work.files = await scan(dir); } catch (e) { $('wState').textContent = '폴더를 읽지 못했습니다: ' + e.message; return; }
+  work.label = guessLabel(work.files); await kvSet('dir', dir);
+  const c = guessClient(work.files); if (c && (clientList.includes(c) || !clientList.length) && c !== hubSettings.client()) setClient(c);
+  drawWork(); drawWorkbar(); if (!silent) $('wState').textContent = `파일 ${work.files.length}개를 찾았습니다.`;
+}
+function drawWork() {
+  const has = !!work.dir, b = $('workChip'); b.textContent = has ? '📁 ' + (work.label || work.dir.name) : '📁 작업 폴더 고르기'; b.classList.toggle('empty', !has);
+  const done = {}; for (const [id, , re] of STAGES) done[id] = work.files.find(f => re.test(f.name) && (id === 'subtime' || f.kind === 'prproj')); /* 맞춤법 교정 XML 은 맞춤법 검사 단계가 아니다 */ for (const [id] of TOOLS) { const d = $('tab-' + id).querySelector('.done'); d.hidden = !done[id]; if (done[id]) d.title = '있음: ' + done[id].rel; }
+  $('wSteps').innerHTML = has ? STAGES.map(([id, name, ]) => `<li><b>${done[id] ? '✅' : '⬜'} ${name}</b><span class="note">${done[id] ? done[id].rel : '아직 없음'}</span></li>`).join('') : '';
+  $('wFiles').innerHTML = work.files.map(f => `<li>${f.rel}</li>`).join('');
+}
+$('workChip').onclick = () => { drawWork(); $('wState').textContent = work.dir ? `${work.dir.name} · 파일 ${work.files.length}개` : ''; $('workDlg').showModal(); };
+$('wPick').onclick = async () => { if (!window.showDirectoryPicker) { $('wState').textContent = '이 화면에서는 폴더를 고를 수 없습니다. 프로그램을 최신으로 업데이트해 주세요.'; return; }
+  try { const d = await showDirectoryPicker({ id: 'work', mode: 'read' }); await useDir(d); } catch (e) { if (e.name !== 'AbortError') $('wState').textContent = '고르지 못했습니다: ' + e.message; } };
+$('wReload').onclick = async () => { if (!work.dir) return; if (await work.dir.requestPermission({ mode: 'read' }) === 'granted') useDir(work.dir); };
+$('wClear').onclick = async () => { work.dir = null; work.files = []; await kvSet('dir', null); drawWork(); drawWorkbar(); $('wState').textContent = '작업을 닫았습니다.'; };
+(async () => { try { const d = await kvGet('dir'); if (!d) return drawWork();
+  if (await d.queryPermission({ mode: 'read' }) === 'granted') return useDir(d, true);
+  work.dir = d; work.label = d.name; drawWork(); $('workChip').textContent = '📁 ' + d.name + ' (눌러서 다시 열기)';
+  $('workChip').onclick = async () => { $('workChip').onclick = null; if (await d.requestPermission({ mode: 'read' }) === 'granted') await useDir(d); $('workChip').onclick = () => { drawWork(); $('workDlg').showModal(); }; };
+} catch { drawWork(); } })();
+
+/* ---- 편집기마다 위쪽 띠: "이 작업의 파일 넣기" ---- */
+const FEED = { // 편집기 → [넣을 칸 id, 종류, 여러 개]
+  cut: [['fileP', 'prproj'], ['fileS', 'script']], subtime: [['fileF', 'subtime']], fx: [['fileM', 'prproj']], spell: [['fileM', 'prproj']], subtitle: [['fileM', 'prproj']],
+  highlight: [['fileM', 'prproj']], shorts: [['fileM', 'prproj']], extract: [['fileM', 'prproj']], fonts: [['file', 'prproj']] };
+const pick = (kind) => work.files.filter(f => kind === 'prproj' ? f.kind === 'prproj' : kind === 'script' ? /^(docx|txt)$/.test(f.kind) : false);
+function drawWorkbar() {
+  const bar = $('workbar'), feed = FEED[cur]; bar.textContent = ''; bar.hidden = !(work.dir && work.files.length && feed); if (bar.hidden) return;
+  const span = (t, c) => { const s = document.createElement('span'); s.textContent = t; if (c) s.className = c; return s; };
+  bar.append(span('📁 ' + (work.label || work.dir.name) + ' 파일 넣기:'));
+  const sels = [];
+  if (cur === 'subtime') { // 자막 타이밍: 교정 XML·vrew·mp3·컷편집 프로젝트를 한 번에
+    for (const [k, lab] of [['xml', 'XML'], ['vrew', 'vrew'], ['mp3', '음성'], ['prproj', '프로젝트']]) {
+      const list = work.files.filter(f => k === 'mp3' ? /^(mp3|wav|m4a)$/.test(f.kind) : f.kind === k); if (!list.length) continue;
+      const pref = k === 'xml' ? list.find(f => /맞춤법|교정/.test(f.name)) : k === 'prproj' ? list.find(f => /컷편집/.test(f.name)) : null;
+      sels.push(addSel(bar, lab, list, pref || list[0], 'fileF')); }
+  } else for (const [id, kind] of feed) { const list = pick(kind); if (!list.length) continue; sels.push(addSel(bar, kind === 'script' ? '대본' : '프로젝트', list, list[0], id)); }
+  if (!sels.length) { bar.append(span('이 편집기에 넣을 파일이 폴더에 없습니다', 'note')); return; }
+  const go = document.createElement('button'); go.className = 'pri'; go.type = 'button'; go.textContent = '넣기'; bar.append(go);
+  const msg = span('', 'note'); bar.append(msg);
+  go.onclick = async () => { msg.textContent = ''; try { await feedFrame(cur, sels.map(s => [s.dataset.input, work.files[+s.value].file])); msg.textContent = '넣었습니다'; } catch (e) { msg.textContent = '넣지 못했습니다: ' + e.message; } };
+}
+function addSel(bar, label, list, def, input) {
+  const s = document.createElement('select'); s.dataset.input = input; s.title = label; s.setAttribute('aria-label', label);
+  for (const f of list) { const o = document.createElement('option'); o.value = String(work.files.indexOf(f)); o.textContent = label + ': ' + f.rel; s.append(o); }
+  s.value = String(work.files.indexOf(def)); bar.append(s); return s;
+}
+async function feedFrame(id, pairs) { // 같은 칸에 갈 파일은 한 번에 넣는다
+  const f = frames[id]; for (let i = 0; i < 100; i++) { try { if (f.contentDocument.readyState === 'complete') break; } catch {} await new Promise(r => setTimeout(r, 100)); }
+  const d = f.contentDocument, by = {}; for (const [inp, file] of pairs) (by[inp] = by[inp] || []).push(file);
+  for (const [inp, files] of Object.entries(by)) { const el = d.getElementById(inp); if (!el) throw new Error('편집기에 파일 칸이 없습니다'); const dt = new DataTransfer(); for (const x of files) dt.items.add(x); el.files = dt.files; el.dispatchEvent(new Event('change', { bubbles: true })); }
+}
+window.__setWorkFiles = (files, label) => { work.dir = { name: label || '시험 작업' }; work.files = files.map(f => ({ name: f.name, rel: f.name, kind: f.name.split('.').pop().toLowerCase(), file: f, at: f.lastModified })).sort((a, b) => b.at - a.at); work.label = label || ''; drawWork(); drawWorkbar(); }; // 시험용
+
+/* ================= 편집기가 열릴 때: 업체 맞추기 + 생김새 통일 ================= */
+/* 색: 바탕·글자·선은 모든 편집기가 같고, 포인트 색은 묶음별(기본: 롱폼 파랑 · 쇼츠 초록 · 도구 보라). ⚙ 설정에서 묶음마다 색·그라데이션을 고를 수 있다(hub-colors) */
+const NEUTRAL = { light: '--bg:#eef0f4;--panel:#fbfcfe;--ink:#171b24;--mute:#4f5868;--line:#d2d8e2', dark: '--bg:#10131a;--panel:#181c26;--ink:#e6eaf2;--mute:#a4adbf;--line:#2b3140' };
+const TONE = { long: { light: ['#1f5fbf', '#fff', '#e3ebf8'], dark: ['#7fb0ff', '#0a1830', '#1d2a40'] }, shorts: { light: ['#0a7a5c', '#fff', '#dff2ea'], dark: ['#5fd3a8', '#06231a', '#15322a'] }, tools: { light: ['#6b4fc8', '#fff', '#ece8fb'], dark: ['#b4a3ff', '#1b1240', '#2a2448'] } };
+const TONE_NAME = { long: '롱폼', shorts: '쇼츠', tools: '도구' };
+const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), mix = (a, b, t) => '#' + rgb(a).map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, '0')).join('');
+const lum = h => { const [r, g, b] = rgb(h).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const userTones = () => ls.get('hub-colors', {}) || {};
+function tone(g, dark) { // → { a: 대표색, ink: 그 위 글자색, soft: 옅은 바탕, bg: 단색 또는 그라데이션 }
+  const c = userTones()[g];
+  if (!c || !/^#[0-9a-f]{6}$/i.test(c.a)) { const [a, ink, soft] = TONE[g][dark ? 'dark' : 'light']; return { a, ink, soft, bg: a }; }
+  const cols = c.grad && /^#[0-9a-f]{6}$/i.test(c.b) ? [c.a, c.b] : [c.a], L = cols.reduce((s, x) => s + lum(x), 0) / cols.length;
+  return { a: c.a, ink: L > 0.36 ? '#111827' : '#ffffff', soft: dark ? mix('#181c26', c.a, 0.28) : mix('#ffffff', c.a, 0.14), bg: cols.length > 1 ? `linear-gradient(135deg,${cols[0]},${cols[1]})` : c.a };
+}
+const toneDecl = t => `--t:${t.a};--t-ink:${t.ink};--t-soft:${t.soft};--t-bg:${t.bg}`;
+function toneStyleText() { const g = ['long', 'shorts', 'tools']; return g.map(x => `[data-tone=${x}]{${toneDecl(tone(x, false))}}`).join('') + '@media (prefers-color-scheme:dark){' + g.map(x => `[data-tone=${x}]{${toneDecl(tone(x, true))}}`).join('') + '}'; }
+const colorCss = id => { const g = toneOf(id), imp = s => s.split(';').map(x => x + ' !important').join(';'), v = (n, t) => `${n};--accent:${t.a};--accent-ink:${t.ink};--accent-soft:${t.soft};--accent-bg:${t.bg}`;
+  return `:root{${imp(v(NEUTRAL.light, tone(g, false)))}}@media (prefers-color-scheme:dark){:root{${imp(v(NEUTRAL.dark, tone(g, true)))};color-scheme:dark}}body{background:var(--bg)!important;color:var(--ink)!important}
+button.pri:not(:disabled),.gs.now{background:var(--accent-bg)!important;border-color:transparent!important;color:var(--accent-ink)!important}`; };
+function applyTones() { // 허브와 이미 열린 편집기 모두에 바로 적용
+  let s = $('toneStyle'); if (!s) { s = document.createElement('style'); s.id = 'toneStyle'; document.head.append(s); } s.textContent = toneStyleText();
+  for (const id in frames) try { const el = frames[id].contentDocument.getElementById('hub-common'); if (el) el.textContent = colorCss(id) + COMMON_CSS; } catch {}
+}
+function drawTones() {
+  const box = $('sTones'), u = userTones(); box.textContent = '';
+  for (const g of ['long', 'shorts', 'tools']) {
+    const t = tone(g, false), c = u[g] || { a: TONE[g].light[0], b: mix(TONE[g].light[0], '#ffffff', 0.45), grad: false }, row = document.createElement('div'); row.className = 'tone';
+    row.innerHTML = `<b>${TONE_NAME[g]}</b><input type="color" aria-label="${TONE_NAME[g]} 색" value="${c.a}"><label class="note"><input type="checkbox" ${c.grad ? 'checked' : ''}> 그라데이션</label><input type="color" aria-label="${TONE_NAME[g]} 두 번째 색" value="${c.b || c.a}" ${c.grad ? '' : 'disabled'}><span class="sw" style="background:${t.bg};color:${t.ink}">미리보기</span>`;
+    const [ca, cb] = row.querySelectorAll('input[type=color]'), gr = row.querySelector('input[type=checkbox]');
+    const save = () => { const all = userTones(); all[g] = { a: ca.value, b: cb.value, grad: gr.checked }; ls.set('hub-colors', all); cb.disabled = !gr.checked; applyTones(); savePrefs(); const n = tone(g, false), sw = row.querySelector('.sw'); sw.style.background = n.bg; sw.style.color = n.ink; };
+    ca.oninput = cb.oninput = gr.onchange = save; box.append(row);
+  }
+}
+$('sToneReset').onclick = () => { ls.set('hub-colors', {}); applyTones(); drawTones(); savePrefs(); };
+const COMMON_CSS = `body{font-family:"Malgun Gothic",system-ui,sans-serif}
+button{border-radius:7px}button:not(:disabled):hover{filter:brightness(1.06)}
+input[type=text],input[type=password],input[type=number],select,textarea{border-radius:6px}
+:focus-visible{outline:2px solid var(--accent,#1f5fbf);outline-offset:1px}`;
+function onFrameLoad(id) {
+  try { const d = frames[id].contentDocument; if (!d.getElementById('hub-common')) { const s = d.createElement('style'); s.id = 'hub-common'; s.textContent = colorCss(id) + COMMON_CSS; d.head.append(s); } } catch {}
+  pushClient(id); roleFrame(id);
+}
+
+/* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
+const VER_LABEL = 'ver.1124.40'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
   appUpdate.onReady(r => {
-    if (document.getElementById('upd')) return; const b = document.createElement('button'); b.id = 'upd'; b.type = 'button';
+    if ($('upd')) return; const b = document.createElement('button'); b.id = 'upd'; b.type = 'button';
     if (r.needInstall) { b.textContent = '새 설치 파일이 필요한 업데이트가 있습니다'; b.disabled = true; }
     else { b.textContent = '새 버전 ' + r.n + ' 받음 · 눌러서 적용'; b.title = '지금 작업 중인 내용은 사라집니다. 저장한 뒤 누르세요. 누르지 않아도 다음에 켤 때 적용됩니다.'; b.onclick = () => appUpdate.apply(); }
-    nav.insertBefore(b, ver); ver.style.marginLeft = '8px'; b.style.marginLeft = document.getElementById('learn') ? '8px' : 'auto';
+    top_.insertBefore(b, $('setBtn'));
     st.ready = r.n || st.ready; toast(r.needInstall ? 'install' : 'ready', r.n, st.notes[r.n] || r.note || '');
   });
-  // 켜 둔 동안에도 10분마다(그리고 창으로 돌아올 때) 새 버전이 올라왔는지 본다. 받는 일은 프로그램을 켤 때 프로그램 틀이 한다.
   const REMOTE = 'https://seohyunseok02.github.io/edit-tools-update/version.json';
   const st = { cur: 0, ready: 0, told: 0, notes: {} };
-  try { st.told = +localStorage.getItem('upd-seen') || 0; } catch {} // 한 번 알린 버전은 프로그램을 다시 켜도 또 알리지 않는다
-  // 알림 끄기: 끄면 Windows 알림만 안 뜨고, 위쪽 "눌러서 적용" 버튼과 다음에 켤 때 자동 적용은 그대로다
+  try { st.told = +localStorage.getItem('upd-seen') || 0; } catch {} // 한 번 알린 버전은 다시 알리지 않는다
   const quiet = () => { try { return localStorage.getItem('upd-notify') === 'off'; } catch { return false; } };
   const nb = document.createElement('button'); nb.id = 'notify'; nb.type = 'button'; nb.className = 'learn';
   const drawN = () => { const off = quiet(); nb.textContent = off ? '🔕 업데이트 알림 꺼짐' : '🔔 업데이트 알림 켜짐'; nb.title = off ? '눌러서 업데이트 알림 켜기 (새 버전이 나오면 화면 오른쪽 아래에 알림)' : '눌러서 업데이트 알림 끄기 (꺼도 위쪽 적용 버튼과 자동 적용은 그대로)'; nb.setAttribute('aria-pressed', String(!off)); };
   nb.onclick = () => { try { localStorage.setItem('upd-notify', quiet() ? 'on' : 'off'); } catch {} drawN(); };
-  drawN(); nav.insertBefore(nb, ver); nb.style.marginLeft = 'auto'; ver.style.marginLeft = '8px';
+  drawN(); $('sNotify').append(nb);
   appUpdate.info().then(i => { st.cur = i.n | 0; }).catch(() => {});
   async function poll() {
-    try {
-      const v = await (await fetch(REMOTE + '?t=' + Date.now(), { cache: 'no-store' })).json(); if (!v || !(v.n > 0)) return; st.notes[v.n] = v.note || '';
-      if (st.cur && v.n > st.cur && v.n > st.ready && v.n > st.told) toast('remote', v.n, v.note || '');
-    } catch (e) {}
+    try { const v = await (await fetch(REMOTE + '?t=' + Date.now(), { cache: 'no-store' })).json(); if (!v || !(v.n > 0)) return; st.notes[v.n] = v.note || '';
+      if (st.cur && v.n > st.cur && v.n > st.ready && v.n > st.told) toast('remote', v.n, v.note || ''); } catch (e) {}
   }
   setTimeout(poll, 60 * 1000); setInterval(poll, 10 * 60 * 1000);
   let lastFocus = 0; window.addEventListener('focus', () => { if (Date.now() - lastFocus > 5 * 60 * 1000) { lastFocus = Date.now(); poll(); } });
-  /* Windows 알림(화면 오른쪽 아래, 카톡 알림처럼): ready = 받아 둠(바로 적용 가능), remote = 올라옴(껐다 켜면 받음), install = 새 설치 파일 필요.
-     알림을 누르면 프로그램 창이 앞으로 나오고, 위쪽 "눌러서 적용" 버튼으로 적용한다(작업 중인 내용이 사라질 수 있어 알림에서 바로 적용하지 않는다). */
+  /* Windows 알림(화면 오른쪽 아래): ready = 받아 둠, remote = 올라옴(껐다 켜면 받음), install = 새 설치 파일 필요 */
   function toast(kind, n, note) {
-    if ((n | 0) <= st.told) return; // 이 버전은 이미 알림 (받음·올라옴 어느 쪽이든 한 번만)
-    if (quiet()) return; // 알림을 꺼 두었으면 띄우지 않는다(켰을 때 아직 안 알린 버전은 알린다)
-    st.told = n | 0; try { localStorage.setItem('upd-seen', String(st.told)); } catch {} if (typeof Notification !== "function") return;
-    const title = kind === "install" ? "편집 도구 모음 · 새 설치 파일이 필요한 업데이트" : `편집 도구 모음 · 새 버전 ${n}${kind === "ready" ? " 받음" : "이 나왔습니다"}`;
-    const how = kind === "ready" ? "프로그램 위쪽의 \"눌러서 적용\"을 누르면 바로 적용됩니다(다음에 켤 때도 적용됩니다)." : kind === "remote" ? "프로그램을 껐다 켜면 받아서 적용할 수 있습니다." : "관리자에게 새 설치 파일을 받아 설치해 주세요.";
-    const show = () => { try { const x = new Notification(title, { body: (note ? note.slice(0, 160) + " / " : "") + how, tag: "edit-tools-update-" + n }); x.onclick = () => { try { window.focus(); } catch (e) {} x.close(); }; } catch (e) {} };
-    if (Notification.permission === "granted") show(); else if (Notification.permission !== "denied") Notification.requestPermission().then(p => { if (p === "granted") show(); }).catch(() => {});
-
+    if ((n | 0) <= st.told || quiet()) return;
+    st.told = n | 0; try { localStorage.setItem('upd-seen', String(st.told)); } catch {} if (typeof Notification !== 'function') return;
+    const title = kind === 'install' ? '편집 도구 모음 · 새 설치 파일이 필요한 업데이트' : `편집 도구 모음 · 새 버전 ${n}${kind === 'ready' ? ' 받음' : '이 나왔습니다'}`;
+    const how = kind === 'ready' ? '프로그램 위쪽의 "눌러서 적용"을 누르면 바로 적용됩니다(다음에 켤 때도 적용됩니다).' : kind === 'remote' ? '프로그램을 껐다 켜면 받아서 적용할 수 있습니다.' : '관리자에게 새 설치 파일을 받아 설치해 주세요.';
+    const show = () => { try { const x = new Notification(title, { body: (note ? note.slice(0, 160) + ' / ' : '') + how, tag: 'edit-tools-update-' + n }); x.onclick = () => { try { window.focus(); } catch (e) {} x.close(); }; } catch (e) {} };
+    if (Notification.permission === 'granted') show(); else if (Notification.permission !== 'denied') Notification.requestPermission().then(p => { if (p === 'granted') show(); }).catch(() => {});
   }
-}
+} else $('sNotify').closest('fieldset').hidden = true;
 // 공유 학습 폴더: 사람들이 고친 내용을 팀이 같이 쓰는 곳 (사무실 나스). 정하지 않으면 이 PC에만 쌓인다.
 if (window.learnApi) {
   const b = document.createElement('button'); b.id = 'learn'; b.type = 'button'; b.className = 'learn';
   const draw = c => { b.textContent = !c || !c.dir ? '공유 학습 폴더 정하기' : c.ok ? '학습 공유 중' : '학습 폴더 연결 안 됨'; b.title = !c || !c.dir ? '사람들이 고친 내용을 팀이 함께 쓰려면 사무실 나스의 공용 폴더를 골라 주세요. 정하지 않으면 이 PC에서 고친 것만 배웁니다.' : (c.ok ? '' : '지금은 이 폴더에 연결되지 않아 이 PC에만 쌓아 두고, 연결되면 올립니다.\n') + c.dir + '\n눌러서 바꾸기'; b.dataset.state = !c || !c.dir ? 'none' : c.ok ? 'ok' : 'off'; };
   b.onclick = () => learnApi.pick().then(c => { if (c) draw(c); }).catch(() => {});
-  learnApi.config().then(draw).catch(() => {}); nav.insertBefore(b, ver);
+  learnApi.config().then(draw).catch(() => {}); top_.insertBefore(b, $('setBtn'));
+  const b2 = b.cloneNode(true); b2.id = 'learn2'; b2.onclick = b.onclick; $('sLearn').append(b2); learnApi.config().then(c => { b2.textContent = b.textContent || (c && c.dir) || '공유 학습 폴더 정하기'; }).catch(() => {});
+} else $('sLearn').closest('fieldset').hidden = true;
+
+/* ================= 로그인: 이름 + 비밀번호, 관리자/일반 =================
+   사람 목록은 팀 공유 학습 폴더(users/공통)에 둔다. 비밀번호는 PBKDF2(SHA-256, 15만 번)로 바꾼 값과 소금값만 저장한다.
+   여러 PC가 쓴 목록은 사람마다 가장 최근(ts) 것을 쓴다. 사무실 안에서 "누가 쓰는지" 구분하는 용도다(공유 폴더를 고칠 수 있는 사람은 목록도 고칠 수 있다). */
+const auth = { users: [], me: null };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const b64 = u8 => btoa(String.fromCharCode(...u8)), unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function pwHash(pw, salt) { const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']); return b64(new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 150000 }, k, 256))); }
+async function newPw(pw) { const salt = crypto.getRandomValues(new Uint8Array(16)); return { salt: b64(salt), hash: await pwHash(pw, salt) }; }
+async function loadUsers() {
+  const items = ((await learnApi.load({ tool: 'users', client: '공통' })).items || []).filter(x => x && x.kind === 'user' && x.name && x.salt && x.hash), by = {};
+  for (const x of items) if (!by[x.name] || (x.ts || 0) > (by[x.name].ts || 0)) by[x.name] = x;
+  return auth.users = Object.values(by).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 }
+async function saveUser(u) { // 한 사람을 바꿔 목록 전체를 이 PC 몫으로 다시 쓴다
+  await loadUsers().catch(() => {}); const x = Object.assign({}, u, { kind: 'user', ts: Date.now(), by: auth.me ? auth.me.name : u.name });
+  auth.users = auth.users.filter(y => y.name !== x.name).concat([x]).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  await learnApi.put({ tool: 'users', client: '공통', rec: 'list', items: auth.users }); return x;
+}
+const active = () => auth.users.filter(u => !u.off), admins = () => active().filter(u => u.role === 'admin');
+// 로그인은 프로그램을 켤 때마다 새로 한다: 창이 열려 있는 동안만 기억(sessionStorage, 새 버전 적용으로 화면을 다시 읽을 때는 유지)
+const sessGet = () => { try { return JSON.parse(sessionStorage.getItem('hub-session') || 'null'); } catch { return null; } };
+const sessClear = () => { ls.set('hub-session', null); try { sessionStorage.removeItem('hub-session'); } catch {} };
+async function startLogin() {
+  if (!window.learnApi) return applyRole(); // 프로그램 밖에서 연 화면: 로그인 없음
+  try { await loadUsers(); } catch {}
+  const s = sessGet(), u = s && active().find(x => x.name === s.name);
+  ls.set('hub-session', null); // 예전 판의 '로그인 유지' 값은 지운다
+  if (u) return signedIn(u, true);
+  showLogin();
+}
+function showLogin(msg) {
+  const first = !active().length; $('login').hidden = false;
+  $('lgSub').textContent = first ? '처음 쓰는 편집기입니다. 관리자 계정을 만드세요. 이 계정으로 다른 사람을 추가합니다.' : '이름을 고르고 비밀번호를 넣으세요.';
+  $('lgName').hidden = first; $('lgNew').hidden = !first; $('lgPw2Box').hidden = !first; $('lgGo').textContent = first ? '관리자 계정 만들기' : '로그인';
+  $('lgPw').autocomplete = first ? 'new-password' : 'current-password';
+  $('lgName').innerHTML = active().map(u => `<option>${esc(u.name)}</option>`).join(''); const last = ls.get('hub-lastuser', ''); if (last && active().some(u => u.name === last)) $('lgName').value = last;
+  $('lgErr').textContent = msg || ''; $('lgPw').value = ''; $('lgPw2').value = ''; setTimeout(() => (first ? $('lgNew') : $('lgPw')).focus(), 50);
+}
+$('lgForm').onsubmit = async e => {
+  e.preventDefault(); const err = t => { $('lgErr').textContent = t; }; $('lgGo').disabled = true;
+  try {
+    await loadUsers().catch(() => {});
+    if (!active().length) {
+      const name = $('lgNew').value.trim(), pw = $('lgPw').value;
+      if (!name) return err('이름을 넣어 주세요.'); if (pw.length < 4) return err('비밀번호는 4자 이상으로 해 주세요.'); if (pw !== $('lgPw2').value) return err('두 비밀번호가 다릅니다.');
+      return signedIn(await saveUser(Object.assign({ name, role: 'admin' }, await newPw(pw))));
+    }
+    const u = active().find(x => x.name === $('lgName').value); if (!u) return err('이름을 골라 주세요.');
+    if (await pwHash($('lgPw').value, unb64(u.salt)) !== u.hash) return err('비밀번호가 맞지 않습니다.');
+    signedIn(u);
+  } catch (er) { err('로그인하지 못했습니다: ' + er.message); } finally { $('lgGo').disabled = false; }
+};
+async function signedIn(u, auto) {
+  auth.me = u; window.__me = u.name; $('login').hidden = true; ls.set('hub-lastuser', u.name);
+  if (!auto) { sessClear(); try { sessionStorage.setItem('hub-session', JSON.stringify({ name: u.name })); } catch {} }
+  drawMe(); applyRole(); logSession('in'); await loadPrefs();
+}
+/* 누가 어느 PC에서 언제 로그인·로그아웃했는지 남긴다(logins/공통). 학습 기록은 PC(who)와 시간이 있으므로 이것과 맞춰 편집자를 알 수 있다
+   (프로그램 틀이 learnApi 를 바꾸지 못하게 막아 두어 학습 기록에 이름을 직접 붙이지는 않는다) */
+async function logSession(kind) { if (!auth.me || !window.learnApi) return; try { const t = Date.now(); await learnApi.put({ tool: 'logins', client: '공통', rec: 'l' + t, items: [{ kind, name: auth.me.name, ts: t }] }); } catch {} }
+function drawMe() {
+  const u = auth.me, c = $('userChip'); c.hidden = !u; $('sMe').hidden = !u; if (!u) return;
+  c.textContent = '👤 ' + u.name + (u.role === 'admin' ? ' (관리자)' : ''); $('meLine').textContent = `${u.name} · ${u.role === 'admin' ? '관리자' : '일반'}로 로그인했습니다.`;
+}
+$('userChip').onclick = () => openSettings();
+const isAdmin = () => !window.learnApi || !!(auth.me && auth.me.role === 'admin');
+const ROLE_CSS = '#btnAdd,#btnDel,#btnImport{display:none!important}'; // 일반 사용자: 업체 추가·삭제·설정 불러오기는 관리자만
+function applyRole() {
+  const a = isAdmin(); document.querySelectorAll('.adminOnly').forEach(e => e.hidden = !a); $('sPeople').hidden = !a || !window.learnApi;
+  for (const id in frames) roleFrame(id);
+}
+function roleFrame(id) { if (id !== 'fx' && id !== 'subtitle') return; try { const d = frames[id].contentDocument; let s = d.getElementById('hub-role'); if (!s) { s = d.createElement('style'); s.id = 'hub-role'; d.head.append(s); } s.textContent = isAdmin() ? '' : ROLE_CSS; } catch {} }
+const meSay = t => { $('meState').textContent = t; };
+$('mePw').onclick = async () => {
+  const u = auth.me; if (!u) return; if (await pwHash($('meOld').value, unb64(u.salt)) !== u.hash) return meSay('지금 비밀번호가 맞지 않습니다.');
+  if ($('meNew').value.length < 4) return meSay('새 비밀번호는 4자 이상으로 해 주세요.');
+  auth.me = await saveUser(Object.assign({}, u, await newPw($('meNew').value))); $('meOld').value = $('meNew').value = ''; meSay('비밀번호를 바꿨습니다.');
+};
+$('meOut').onclick = () => { logSession('out'); sessClear(); auth.me = null; window.__me = null; $('setDlg').close(); drawMe(); showLogin('로그아웃했습니다.'); };
+/* 사람 관리 (관리자): 추가 · 권한 바꾸기 · 비밀번호 초기화 · 사용 중지. 마지막 관리자는 내리거나 멈출 수 없다 */
+async function drawPeople() {
+  if ($('sPeople').hidden) return; await loadUsers().catch(() => {}); const tb = $('uList'); tb.textContent = '';
+  for (const u of auth.users) {
+    const tr = document.createElement('tr'); if (u.off) tr.className = 'off';
+    tr.innerHTML = `<td>${esc(u.name)}${auth.me && u.name === auth.me.name ? ' (나)' : ''}${u.off ? ' · 사용 중지' : ''}</td><td><select aria-label="${esc(u.name)} 권한"><option value="user">일반</option><option value="admin">관리자</option></select></td>
+      <td><input type="password" placeholder="새 비밀번호" aria-label="${esc(u.name)} 새 비밀번호" style="width:120px" autocomplete="new-password"> <button class="btn" type="button">비밀번호 초기화</button> <button class="btn" type="button">${u.off ? '다시 사용' : '사용 중지'}</button></td>`;
+    const [sel] = tr.querySelectorAll('select'), [pw] = tr.querySelectorAll('input'), [bReset, bOff] = tr.querySelectorAll('button'); sel.value = u.role || 'user';
+    const lastAdmin = () => u.role === 'admin' && !u.off && admins().length <= 1;
+    sel.onchange = async () => { if (sel.value !== 'admin' && lastAdmin()) { sel.value = 'admin'; return $('uState').textContent = '관리자가 한 명은 있어야 합니다.'; } await saveUser(Object.assign({}, u, { role: sel.value })); $('uState').textContent = `${u.name}: ${sel.value === 'admin' ? '관리자' : '일반'}로 바꿨습니다.`; drawPeople(); };
+    bReset.onclick = async () => { if (pw.value.length < 4) return $('uState').textContent = '새 비밀번호는 4자 이상으로 넣어 주세요.'; await saveUser(Object.assign({}, u, await newPw(pw.value))); $('uState').textContent = `${u.name}의 비밀번호를 바꿨습니다. 새 비밀번호를 그 사람에게 알려 주세요.`; pw.value = ''; };
+    bOff.onclick = async () => { if (!u.off && (lastAdmin() || (auth.me && u.name === auth.me.name))) return $('uState').textContent = '나 자신이나 마지막 관리자는 멈출 수 없습니다.'; await saveUser(Object.assign({}, u, { off: !u.off })); drawPeople(); };
+    tb.append(tr);
+  }
+}
+$('uAdd').onclick = async () => {
+  const name = $('uName').value.trim(), pw = $('uPw').value; if (!name) return $('uState').textContent = '이름을 넣어 주세요.';
+  if (auth.users.some(u => u.name === name)) return $('uState').textContent = '같은 이름이 이미 있습니다.'; if (pw.length < 4) return $('uState').textContent = '처음 비밀번호는 4자 이상으로 넣어 주세요.';
+  await saveUser(Object.assign({ name, role: $('uRole').value }, await newPw(pw))); $('uName').value = $('uPw').value = ''; $('uState').textContent = `${name}을(를) 추가했습니다. 처음 비밀번호를 알려 주세요.`; drawPeople();
+};
+/* 사람을 따라가는 설정: 색·업체 (users 와 같은 공유 폴더, userpref/<이름>) */
+async function loadPrefs() {
+  if (!auth.me || !window.learnApi) return;
+  try { const it = ((await learnApi.load({ tool: 'userpref', client: auth.me.name })).items || []).filter(x => x && x.kind === 'pref').sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+    if (it) { if (it.colors && typeof it.colors === 'object') ls.set('hub-colors', it.colors); if (typeof it.client === 'string') setClient(it.client, true); applyTones(); } } catch {}
+}
+let prefTimer = 0;
+function savePrefs() { if (!auth.me || !window.learnApi) return; clearTimeout(prefTimer); prefTimer = setTimeout(() => learnApi.put({ tool: 'userpref', client: auth.me.name, rec: 'pref', items: [{ kind: 'pref', ts: Date.now(), colors: userTones(), client: hubSettings.client() }] }).catch(() => {}), 800); }
+
+applyTones(); drawClientChip(); startLogin(); loadClients().then(() => { drawClients(); for (const id in frames) pushClient(id); });
+loadSharedGpt();
 let last = null; try { last = localStorage.getItem('hub-tab'); } catch {}
-open(TOOLS.some(t => t[0] === last) ? last : 'fx');
+open(TOOLS.some(t => t[0] === last) ? last : 'cut');
 </script>
 </body>
 </html>

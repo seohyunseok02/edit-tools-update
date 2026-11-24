@@ -1332,6 +1332,23 @@ function buildHighlight(P, an, plan, opt) {
    키를 기억하게 하면 연결 설정을 팀 공유 학습 폴더(aiconf)에 남기고, 키가 없는 PC는 그것을 받아 쓴다(OmniRoute PC의 127.0.0.1 은 그 PC 이름으로 바꾼다). */
 const GPT_DEFAULT = { base: 'http://127.0.0.1:20128/v1', model: 'cx/gpt-6.2-astra-high', openai: 'https://api.openai.com/v1' };
 function gptUrl(doc) { const e = (doc || document).getElementById('gptBase'); return ((e && e.value.trim()) || GPT_DEFAULT.base).replace(/\/+$/, '') + '/'; }
+/* 편집 도구 모음(허브) 안에서는 GPT 주소·키·모델 칸을 숨기고 허브 설정 값을 칸에 채워 둔다(편집기는 지금처럼 칸에서 읽는다).
+   허브가 없으면(따로 연 html) false → 예전처럼 편집기 안에서 넣는다 */
+function hubGpt(doc) {
+  doc = doc || document; let H = null; try { H = window.parent !== window && window.parent.hubSettings || null; } catch {} if (!H) return false;
+  const $ = id => doc.getElementById(id), box = $('gptBox'); if (!box || box.dataset.hub) return !!box; box.dataset.hub = '1';
+  for (const el of [...box.children]) if (el.tagName !== 'H3') el.hidden = true;
+  const p = doc.createElement('p'); p.className = 'note'; const b = doc.createElement('button'); b.type = 'button'; b.textContent = '⚙ 설정 열기'; b.onclick = () => H.open();
+  const t = doc.createElement('span'); p.append(t, ' ', b); box.append(p);
+  if (!$('gptBase')) { const i = doc.createElement('input'); i.type = 'hidden'; i.id = 'gptBase'; box.append(i); } // gptUrl 이 읽는 칸
+  H.onGpt(g => {
+    $('gptBase').value = g.base || ''; if ($('gptKey')) $('gptKey').value = g.key || ''; if ($('gptKeep')) $('gptKeep').checked = !!g.keep;
+    const m = $('gptModel'); if (m) { if (m.tagName === 'SELECT' && g.model && ![...m.options].some(o => o.value === g.model)) { const o = doc.createElement('option'); o.value = o.textContent = g.model; m.append(o); } m.value = g.model || m.value; }
+    for (const id of ['gptKey', 'gptModel']) if ($(id)) $(id).dispatchEvent(new Event('change')); // 편집기가 자기 저장값을 맞추게
+    t.textContent = g.key ? `GPT 연결은 위쪽 ⚙ 설정 한 곳에서 합니다. 지금: ${g.base} · ${g.model}` : 'GPT 키가 아직 없습니다. 위쪽 ⚙ 설정에서 넣어 주세요.';
+  });
+  return true;
+}
 function gptSetup(doc) {
   doc = doc || document; const box = doc.getElementById('gptBox'), $ = id => doc.getElementById(id); if (!box || box.dataset.sub || !$('gptKey')) return; box.dataset.sub = '1';
   const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
@@ -1346,6 +1363,7 @@ function gptSetup(doc) {
   const sel = $('gptModel'), addOpt = v => { if (sel && v && ![...sel.options].some(o => o.value === v)) { const o = doc.createElement('option'); o.value = o.textContent = v; sel.append(o); } };
   if (sel && !sel.options.length) addOpt(GPT_DEFAULT.model);
   const note = $('gptNote'); if (note) note.textContent = '이 PC의 OmniRoute를 거쳐 ChatGPT 구독 안에서 씁니다(추가 요금 없음). 키는 OmniRoute 대시보드에서 만듭니다. 주소를 https://api.openai.com/v1 로 바꾸고 sk- 키를 넣으면 API 요금이 나가는 방식으로도 쓸 수 있습니다.';
+  if (hubGpt(doc)) return; // 편집 도구 모음 안: 연결 설정은 위쪽 ⚙ 설정 한 곳에서
   const LA = (() => { try { return window.parent !== window && window.parent.learnApi || null; } catch { return null; } })(); let loading = false;
   const share = async () => { const key = $('gptKey').value.trim(); if (loading || !LA || !key || !$('gptKeep').checked || paidKey(key) || paidBase()) return; try { const me = (await LA.config()).me; await LA.put({ tool: 'aiconf', client: '공통', rec: 'gpt', items: [{ kind: 'gpt', at: Date.now(), who: me, base: $('gptBase').value.trim(), model: sel ? sel.value : '', key }] }); } catch {} };
   $('gptBase').addEventListener('change', () => { ls.set('gpt-base', $('gptBase').value.trim()); share(); });
@@ -1956,7 +1974,7 @@ function relinkFonts(P, map) {
   }
   return { layers, skipped, count };
 }
-const Engine = { TICKS, relinkFonts, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+const Engine = { TICKS, relinkFonts, hubGpt, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
