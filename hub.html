@@ -91,6 +91,8 @@ dialog legend{font-weight:700;padding:0 4px}
   <button class="chip" id="workChip" type="button" title="지금 작업하는 영상 폴더 (눌러서 고르기·바꾸기)"></button>
   <button class="chip" id="clientChip" type="button" title="지금 업체 (눌러서 바꾸기)"></button>
   <span class="spacer"></span>
+  <button class="learn" id="resetBtn" type="button" title="지금 편집기에 넣은 파일과 진행한 내용을 모두 비우고 처음부터 합니다. 로그인과 다른 편집기는 그대로입니다.">↺ 이 편집기 처음부터</button>
+  <button class="learn" id="bugBtn" type="button" title="문제가 생겼을 때 눌러 주세요. 지금 화면 상태와 오류 기록을 팀 공유 폴더에 남깁니다.">🐞 오류 알리기</button>
   <button class="chip" id="userChip" type="button" hidden></button>
   <button class="learn" id="setBtn" type="button">⚙ 설정</button>
   <span id="ver"></span>
@@ -110,12 +112,17 @@ dialog legend{font-weight:700;padding:0 4px}
       <p class="note" id="meLine"></p>
       <div class="row"><label for="meOld">지금 비밀번호</label><input type="password" id="meOld" autocomplete="current-password"></div>
       <div class="row"><label for="meNew">새 비밀번호</label><input type="password" id="meNew" autocomplete="new-password"><button class="btn" type="button" id="mePw">비밀번호 바꾸기</button></div>
+      <div class="row" id="meKakaoRow" hidden><span class="note" id="meKakao"></span><button class="btn" type="button" id="meKakaoBtn">카카오 연결</button></div>
       <div class="row"><button class="btn" type="button" id="meOut">로그아웃</button><span class="note" id="meState"></span></div>
     </fieldset>
     <fieldset id="sPeople" class="adminOnly" hidden><legend>사람 관리 (관리자만)</legend>
       <table class="users"><thead><tr><th>이름</th><th>권한</th><th></th></tr></thead><tbody id="uList"></tbody></table>
       <div class="row"><input type="text" id="uName" placeholder="새 사람 이름" style="flex:1"><input type="password" id="uPw" placeholder="처음 비밀번호" autocomplete="new-password" style="flex:1"><select id="uRole"><option value="user">일반</option><option value="admin">관리자</option></select><button class="btn pri" type="button" id="uAdd">추가</button></div>
       <p class="note" id="uState">처음 비밀번호를 알려 주고, 로그인한 뒤 ⚙ 설정 → 내 계정에서 바꾸게 하세요.</p>
+    </fieldset>
+    <fieldset class="adminOnly" id="sKakao" hidden><legend>카카오 로그인 (관리자만)</legend>
+      <div class="row"><label for="kKey">REST API 키</label><input type="password" id="kKey" autocomplete="off" placeholder="카카오 디벨로퍼스 → 앱 → 플랫폼 키의 REST API 키"><button class="btn" type="button" id="kSave">저장</button></div>
+      <p class="note" id="kState">키를 넣으면 모든 PC의 로그인 화면에 "카카오로 로그인" 버튼이 생깁니다(공유 학습 폴더로 전달).</p>
     </fieldset>
     <fieldset class="adminOnly"><legend>GPT 연결 (모든 편집기가 같이 씀)</legend>
       <div class="row"><label for="sBase">주소</label><input type="text" id="sBase" spellcheck="false"></div>
@@ -132,6 +139,11 @@ dialog legend{font-weight:700;padding:0 4px}
       <div id="sTones"></div>
       <div class="row"><button class="btn" type="button" id="sToneReset">기본 색으로</button><span class="note">고르면 바로 바뀝니다. 그라데이션을 켜면 두 색이 버튼·메뉴에 섞여 나옵니다. 글자색(흰색/검정)은 배경에 맞춰 알아서 고릅니다.</span></div>
     </fieldset>
+    <fieldset class="adminOnly" id="sBackup"><legend>설정 백업 (관리자만)</legend>
+      <p class="note">하루에 한 번, 처음 켜는 PC가 업체 설정(템플릿 포함)·사람 목록·카카오/GPT 연결 설정을 팀 공유 폴더에 날짜별로 남깁니다. 잘못 지우거나 바꿨을 때 날짜를 골라 되돌립니다.</p>
+      <div class="row"><select id="bkDay" aria-label="백업 날짜"></select><button class="btn" type="button" id="bkNow">지금 백업</button><button class="btn" type="button" id="bkRestore">이 날짜로 되돌리기</button></div>
+      <p class="note" id="bkState"></p>
+    </fieldset>
     <fieldset class="adminOnly"><legend>팀 공유 학습 폴더</legend><div class="row" id="sLearn"></div></fieldset>
     <fieldset><legend>업데이트 알림</legend><div class="row" id="sNotify"></div></fieldset>
     <div class="row" style="justify-content:flex-end"><button class="btn pri" type="button" id="sSave">저장</button></div>
@@ -146,9 +158,21 @@ dialog legend{font-weight:700;padding:0 4px}
     <div><label class="note" for="lgPw">비밀번호</label><input type="password" id="lgPw" autocomplete="current-password"></div>
     <div id="lgPw2Box" hidden><label class="note" for="lgPw2">비밀번호 한 번 더</label><input type="password" id="lgPw2" autocomplete="new-password"></div>
     <button class="btn pri" type="submit" id="lgGo">로그인</button>
+    <button class="btn" type="button" id="lgKakao" hidden style="background:#fee500;color:#191919;border-color:#fee500;padding:10px;font-weight:700">카카오로 로그인 (QR)</button>
     <p class="err" id="lgErr" role="alert"></p>
   </form>
 </div>
+
+<dialog id="bugDlg" aria-labelledby="bugTitle">
+  <div class="hd"><h3 id="bugTitle">🐞 오류 알리기</h3><button class="x" type="button" data-close aria-label="닫기">×</button></div>
+  <div class="bd">
+    <label class="note" for="bugMemo">무슨 일이 있었나요? (비워도 됩니다)</label>
+    <textarea id="bugMemo" rows="4" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);font:inherit;color:inherit" placeholder="예: 자막 타이밍에서 만들기를 눌렀더니 오류가 났어요"></textarea>
+    <p class="note">지금 열린 편집기 화면의 글자, 최근 오류 메시지, 넣은 파일 이름, 버전·PC·로그인한 사람을 팀 공유 폴더에 남깁니다. 파일 내용과 키·비밀번호는 보내지 않습니다.</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn pri" type="button" id="bugSend">보내기</button></div>
+    <p class="note" id="bugState" role="status"></p>
+  </div>
+</dialog>
 
 <dialog id="workDlg" aria-labelledby="workTitle">
   <div class="hd"><h3 id="workTitle">작업 (영상 폴더)</h3><button class="x" type="button" data-close aria-label="닫기">×</button></div>
@@ -224,7 +248,7 @@ async function loadSharedGpt() { // 키가 없는 PC: 팀 공유 설정을 받�
 }
 function openSettings() {
   const g = hubSettings.gpt(); $('sBase').value = g.base; $('sKey').value = g.key || ''; $('sModel').value = g.model; $('sKeep').checked = !!g.keep; $('sState').textContent = '';
-  drawClients(); drawTones(); applyRole(); drawPeople(); $('setDlg').showModal();
+  drawClients(); drawTones(); applyRole(); drawKakao(); drawPeople(); drawBackups(); $('setDlg').showModal();
 }
 $('setBtn').onclick = openSettings;
 $('sTest').onclick = async () => {
@@ -373,13 +397,91 @@ const COMMON_CSS = `body{font-family:"Malgun Gothic",system-ui,sans-serif}
 button{border-radius:7px}button:not(:disabled):hover{filter:brightness(1.06)}
 input[type=text],input[type=password],input[type=number],select,textarea{border-radius:6px}
 :focus-visible{outline:2px solid var(--accent,#1f5fbf);outline-offset:1px}`;
+/* ================= 오류 알리기 =================
+   편집기마다 프로그램 오류(error·unhandledrejection·console.error)를 최근 40개까지 모아 두고, 버튼을 누르면 지금 상태와 함께 공유 폴더(bugs/공통)에 남긴다.
+   화면 사진은 프로그램 틀이 있어야 찍을 수 있어 대신 화면 글자를 남긴다 */
+const errLog = [];
+const logErr = (id, kind, msg) => { errLog.push({ t: Date.now(), tab: id, kind, msg: String(msg || '').slice(0, 600) }); if (errLog.length > 40) errLog.shift(); };
+window.addEventListener('error', e => logErr('hub', 'error', (e.message || '') + (e.filename ? ` @${String(e.filename).split('/').pop()}:${e.lineno}` : '')));
+window.addEventListener('unhandledrejection', e => logErr('hub', 'promise', e.reason && (e.reason.stack || e.reason.message) || e.reason));
+function watchFrame(id) {
+  try { const w = frames[id].contentWindow; if (w.__hubWatch) return; w.__hubWatch = true;
+    w.addEventListener('error', e => logErr(id, 'error', (e.message || '') + (e.filename ? ` @${String(e.filename).split('/').pop()}:${e.lineno}` : '')));
+    w.addEventListener('unhandledrejection', e => logErr(id, 'promise', e.reason && (e.reason.stack || e.reason.message) || e.reason));
+    const ce = w.console.error.bind(w.console); w.console.error = (...a) => { logErr(id, 'console', a.map(x => x && x.stack || String(x)).join(' ')); ce(...a); };
+  } catch {}
+}
+function bugSnapshot(memo) {
+  const id = cur, out = { kind: 'bug', ts: Date.now(), memo: memo || '', user: auth.me ? auth.me.name : '', tab: id, tabName: (TOOLS.find(t => t[0] === id) || [])[1] || id, version: VER_LABEL, ver: ver.textContent,
+    work: work.dir ? { label: work.label, folder: work.dir.name, files: work.files.slice(0, 40).map(f => f.rel + ' (' + Math.round(f.file.size / 1024) + 'KB)') } : null, errors: errLog.slice(-25) };
+  try { const d = frames[id].contentDocument, vis = e => e && !e.hidden && e.offsetParent !== null;
+    out.errBoxes = [...d.querySelectorAll('.msg,.err,[id^=err],[role=alert]')].filter(vis).map(e => e.textContent.trim()).filter(Boolean).slice(0, 10);
+    out.screen = (d.body.innerText || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').slice(0, 6000); // 지금 화면 글자(넣은 파일 이름·상태 문구 포함)
+  } catch (e) { out.screen = '화면을 읽지 못함: ' + e.message; }
+  return out;
+}
+/* 지금 편집기만 새로 연다(넣은 파일·진행 내용 비우기). 허브는 그대로라 로그인·작업 폴더·다른 편집기는 남는다 */
+$('resetBtn').onclick = () => {
+  const f = frames[cur]; if (!f) return; const name = (TOOLS.find(t => t[0] === cur) || [])[1] || '이 편집기';
+  if (!confirm(`${name}에 넣은 파일과 진행한 내용을 모두 비우고 처음부터 할까요?\n(로그인과 다른 편집기는 그대로입니다. 저장하지 않은 결과는 사라집니다)`)) return;
+  try { f.contentWindow.location.reload(); } catch { f.src = f.src; }
+};
+$('bugBtn').onclick = () => { $('bugMemo').value = ''; $('bugState').textContent = ''; $('bugSend').disabled = false; $('bugDlg').showModal(); };
+$('bugSend').onclick = async () => {
+  if (!window.learnApi) return $('bugState').textContent = '프로그램 안에서만 보낼 수 있습니다.';
+  $('bugSend').disabled = true; const r = bugSnapshot($('bugMemo').value.trim());
+  try { const c = await learnApi.config(); r.pc = c.me; const res = await learnApi.put({ tool: 'bugs', client: '공통', rec: 'b' + r.ts, items: [r] });
+    $('bugState').textContent = (res && res.shared ? '팀 공유 폴더에 남겼습니다.' : '공유 폴더에 연결되지 않아 이 PC에만 남겼습니다.') + ' Claude에게 "오류 알렸어"라고 말해 주세요.';
+  } catch (e) { $('bugState').textContent = '남기지 못했습니다: ' + e.message; $('bugSend').disabled = false; }
+};
+
+/* ================= 설정 백업 (하루 한 번, 날짜별) =================
+   backup/<날짜>_<업체> : 업체 설정 하나씩(템플릿 포함, 파일 하나가 너무 커지지 않게) · backup/<날짜> : 사람 목록·카카오·GPT 연결 · backup/공통 : 날짜 목록 */
+const today = () => { const d = new Date(), p = x => String(x).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`; };
+const dayLabel = d => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` + (d.length > 8 ? ` ${d.slice(8, 10)}:${d.slice(10, 12)} 되돌리기 직전` : '');
+const hex = s => [...new TextEncoder().encode(s)].map(b => b.toString(16).padStart(2, '0')).join('');
+const latest = (items, kind, key) => { const m = new Map(); for (const x of items || []) if (x && x.kind === kind) { const k = key(x); if (k && (!m.has(k) || (x.at || x.ts || 0) >= (m.get(k).at || m.get(k).ts || 0))) m.set(k, x); } return m; };
+async function backupDays() { try { return [...new Set(((await learnApi.load({ tool: 'backup', client: '공통' })).items || []).filter(x => x && x.kind === 'day').map(x => x.day))].sort().reverse(); } catch { return []; } }
+async function runBackup(force, tag) { // tag: 되돌리기 직전 백업은 날짜+시각(12자리)으로 따로 둔다
+  if (!window.learnApi) return 0; const day = tag || today();
+  if (!force && (await backupDays()).includes(day)) return 0; // 오늘 이미 누가 했음
+  const idx = latest((await learnApi.load({ tool: 'fxclient', client: '공통' })).items, 'index', x => x.name); let n = 0;
+  for (const [name, x] of idx) { if (x.deleted) continue;
+    const c = latest((await learnApi.load({ tool: 'fxclient', client: name })).items, 'client', () => 'c').get('c'); if (!c || !c.data) continue;
+    await learnApi.put({ tool: 'backup', client: day + '_' + name, rec: 'c' + hex(name), items: [{ kind: 'client', name, data: c.data }] }); n++; }
+  const pick = async (tool, kind) => ((await learnApi.load({ tool, client: '공통' })).items || []).filter(x => x && x.kind === kind);
+  await learnApi.put({ tool: 'backup', client: day, rec: 'misc', items: [{ kind: 'misc', users: await pick('users', 'user'), appcfg: await pick('appcfg', 'kakao'), aiconf: await pick('aiconf', 'gpt'), clients: [...idx.keys()].filter(k => !idx.get(k).deleted) }] });
+  await learnApi.put({ tool: 'backup', client: '공통', rec: 'd' + hex(day), items: [{ kind: 'day', day, clients: n, by: auth.me ? auth.me.name : '' }] });
+  return n;
+}
+async function drawBackups() { if ($('sBackup').hidden || !window.learnApi) return; const days = await backupDays(); $('bkDay').innerHTML = days.length ? days.map(d => `<option value="${d}">${dayLabel(d)}</option>`).join('') : '<option value="">아직 백업 없음</option>'; }
+$('bkNow').onclick = async () => { $('bkState').textContent = '백업하는 중…'; try { const n = await runBackup(true); $('bkState').textContent = `오늘 날짜로 백업했습니다 (업체 ${n}곳 + 사람 목록·연결 설정).`; drawBackups(); } catch (e) { $('bkState').textContent = '백업하지 못했습니다: ' + e.message; } };
+$('bkRestore').onclick = async () => {
+  const day = $('bkDay').value; if (!day) return;
+  if (!confirm(`${dayLabel(day)} 백업으로 업체 설정과 사람 목록을 되돌릴까요?\n그 뒤에 바꾼 업체 설정·비밀번호는 백업 때 것으로 돌아갑니다. 되돌리기 전에 지금 상태도 백업해 둡니다.`)) return;
+  $('bkState').textContent = '되돌리는 중…';
+  try {
+    { const t = new Date(), p = x => String(x).padStart(2, '0'); await runBackup(true, today() + p(t.getHours()) + p(t.getMinutes())); } // 되돌리기 전 지금 상태(따로)
+    const misc = (((await learnApi.load({ tool: 'backup', client: day })).items || []).filter(x => x && x.kind === 'misc').sort((a, b) => (b.at || 0) - (a.at || 0))[0]) || { clients: [] }; let n = 0;
+    for (const name of misc.clients || []) {
+      const b = latest((await learnApi.load({ tool: 'backup', client: day + '_' + name })).items, 'client', () => 'c').get('c'); if (!b || !b.data) continue;
+      const rec = hex(name); // 효과자막 탭과 같은 기록 이름 → 가장 최근 것으로 되살아난다
+      await learnApi.put({ tool: 'fxclient', client: name, rec, items: [{ kind: 'client', data: b.data }] });
+      await learnApi.put({ tool: 'fxclient', client: '공통', rec, items: [{ kind: 'index', name, deleted: false }] }); n++;
+    }
+    if (misc.users && misc.users.length) { const t = Date.now(); await learnApi.put({ tool: 'users', client: '공통', rec: 'list', items: misc.users.map(u => Object.assign({}, u, { ts: t })) }); await loadUsers().catch(() => {}); }
+    $('bkState').textContent = `되돌렸습니다: 업체 ${n}곳${misc.users && misc.users.length ? `, 사람 ${misc.users.length}명` : ''}. 효과자막 탭은 프로그램을 다시 켜면 반영됩니다.`;
+  } catch (e) { $('bkState').textContent = '되돌리지 못했습니다: ' + e.message; }
+};
+
 function onFrameLoad(id) {
+  watchFrame(id);
   try { const d = frames[id].contentDocument; if (!d.getElementById('hub-common')) { const s = d.createElement('style'); s.id = 'hub-common'; s.textContent = colorCss(id) + COMMON_CSS; d.head.append(s); } } catch {}
   pushClient(id); roleFrame(id);
 }
 
 /* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
-const VER_LABEL = 'ver.1124.40'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1124.43'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
@@ -448,7 +550,7 @@ const sessGet = () => { try { return JSON.parse(sessionStorage.getItem('hub-sess
 const sessClear = () => { ls.set('hub-session', null); try { sessionStorage.removeItem('hub-session'); } catch {} };
 async function startLogin() {
   if (!window.learnApi) return applyRole(); // 프로그램 밖에서 연 화면: 로그인 없음
-  try { await loadUsers(); } catch {}
+  try { await loadUsers(); } catch {} await loadKakaoKey();
   const s = sessGet(), u = s && active().find(x => x.name === s.name);
   ls.set('hub-session', null); // 예전 판의 '로그인 유지' 값은 지운다
   if (u) return signedIn(u, true);
@@ -460,7 +562,7 @@ function showLogin(msg) {
   $('lgName').hidden = first; $('lgNew').hidden = !first; $('lgPw2Box').hidden = !first; $('lgGo').textContent = first ? '관리자 계정 만들기' : '로그인';
   $('lgPw').autocomplete = first ? 'new-password' : 'current-password';
   $('lgName').innerHTML = active().map(u => `<option>${esc(u.name)}</option>`).join(''); const last = ls.get('hub-lastuser', ''); if (last && active().some(u => u.name === last)) $('lgName').value = last;
-  $('lgErr').textContent = msg || ''; $('lgPw').value = ''; $('lgPw2').value = ''; setTimeout(() => (first ? $('lgNew') : $('lgPw')).focus(), 50);
+  drawKakao(); $('lgErr').textContent = msg || ''; $('lgPw').value = ''; $('lgPw2').value = ''; setTimeout(() => (first ? $('lgNew') : $('lgPw')).focus(), 50);
 }
 $('lgForm').onsubmit = async e => {
   e.preventDefault(); const err = t => { $('lgErr').textContent = t; }; $('lgGo').disabled = true;
@@ -479,7 +581,7 @@ $('lgForm').onsubmit = async e => {
 async function signedIn(u, auto) {
   auth.me = u; window.__me = u.name; $('login').hidden = true; ls.set('hub-lastuser', u.name);
   if (!auto) { sessClear(); try { sessionStorage.setItem('hub-session', JSON.stringify({ name: u.name })); } catch {} }
-  drawMe(); applyRole(); logSession('in'); await loadPrefs();
+  drawMe(); applyRole(); drawKakao(); logSession('in'); await loadPrefs();
 }
 /* 누가 어느 PC에서 언제 로그인·로그아웃했는지 남긴다(logins/공통). 학습 기록은 PC(who)와 시간이 있으므로 이것과 맞춰 편집자를 알 수 있다
    (프로그램 틀이 learnApi 를 바꾸지 못하게 막아 두어 학습 기록에 이름을 직접 붙이지는 않는다) */
@@ -508,7 +610,7 @@ async function drawPeople() {
   if ($('sPeople').hidden) return; await loadUsers().catch(() => {}); const tb = $('uList'); tb.textContent = '';
   for (const u of auth.users) {
     const tr = document.createElement('tr'); if (u.off) tr.className = 'off';
-    tr.innerHTML = `<td>${esc(u.name)}${auth.me && u.name === auth.me.name ? ' (나)' : ''}${u.off ? ' · 사용 중지' : ''}</td><td><select aria-label="${esc(u.name)} 권한"><option value="user">일반</option><option value="admin">관리자</option></select></td>
+    tr.innerHTML = `<td>${esc(u.name)}${auth.me && u.name === auth.me.name ? ' (나)' : ''}${u.off ? ' · 사용 중지' : ''}${u.kakaoId ? ' · 카카오 ' + esc(u.kakaoNick || '연결') : ''}</td><td><select aria-label="${esc(u.name)} 권한"><option value="user">일반</option><option value="admin">관리자</option></select></td>
       <td><input type="password" placeholder="새 비밀번호" aria-label="${esc(u.name)} 새 비밀번호" style="width:120px" autocomplete="new-password"> <button class="btn" type="button">비밀번호 초기화</button> <button class="btn" type="button">${u.off ? '다시 사용' : '사용 중지'}</button></td>`;
     const [sel] = tr.querySelectorAll('select'), [pw] = tr.querySelectorAll('input'), [bReset, bOff] = tr.querySelectorAll('button'); sel.value = u.role || 'user';
     const lastAdmin = () => u.role === 'admin' && !u.off && admins().length <= 1;
@@ -523,6 +625,37 @@ $('uAdd').onclick = async () => {
   if (auth.users.some(u => u.name === name)) return $('uState').textContent = '같은 이름이 이미 있습니다.'; if (pw.length < 4) return $('uState').textContent = '처음 비밀번호는 4자 이상으로 넣어 주세요.';
   await saveUser(Object.assign({ name, role: $('uRole').value }, await newPw(pw))); $('uName').value = $('uPw').value = ''; $('uState').textContent = `${name}을(를) 추가했습니다. 처음 비밀번호를 알려 주세요.`; drawPeople();
 };
+/* ---- 카카오 로그인 (QR): 프로그램 틀(6세대 이상)이 카카오 창을 띄우고 { id, nickname } 만 돌려준다 ----
+   REST API 키는 관리자가 넣고 공유 폴더(appcfg/공통)로 모든 PC에 간다. 사람마다 처음 한 번 "카카오 연결"로 카카오 번호를 이름에 붙인다 */
+const kakao = { key: '' };
+async function loadKakaoKey() { if (!window.learnApi) return; try { const x = ((await learnApi.load({ tool: 'appcfg', client: '공통' })).items || []).filter(i => i && i.kind === 'kakao').sort((a, b) => (b.ts || 0) - (a.ts || 0))[0]; kakao.key = x && x.key || ''; } catch {} drawKakao(); }
+function drawKakao() {
+  const can = !!(window.kakaoApi && kakao.key); $('lgKakao').hidden = !can || !active().length;
+  $('sKakao').hidden = !isAdmin() || !window.kakaoApi; if (!$('kKey').value) $('kKey').placeholder = kakao.key ? '저장돼 있음 (바꾸려면 새로 넣기)' : '카카오 디벨로퍼스 → 앱 → 플랫폼 키의 REST API 키';
+  const u = auth.me; $('meKakaoRow').hidden = !u || !can; if (u) { $('meKakao').textContent = u.kakaoId ? `카카오 연결됨: ${u.kakaoNick || ''}` : '카카오 연결 안 됨'; $('meKakaoBtn').textContent = u.kakaoId ? '연결 끊기' : '카카오 연결'; }
+}
+$('kSave').onclick = async () => {
+  const k = $('kKey').value.trim(); if (!/^[0-9a-f]{32}$/i.test(k)) return $('kState').textContent = 'REST API 키는 영문·숫자 32자입니다. 다시 확인해 주세요.';
+  try { await learnApi.put({ tool: 'appcfg', client: '공통', rec: 'kakao', items: [{ kind: 'kakao', key: k, ts: Date.now() }] }); kakao.key = k; $('kKey').value = ''; $('kState').textContent = '저장했습니다. 이제 내 계정에서 "카카오 연결"을 눌러 보세요.'; drawKakao(); } catch (e) { $('kState').textContent = '저장하지 못했습니다: ' + e.message; }
+};
+$('lgKakao').onclick = async () => {
+  $('lgErr').textContent = ''; $('lgKakao').disabled = true;
+  try { const k = await kakaoApi.login(kakao.key); await loadUsers().catch(() => {}); const u = active().find(x => x.kakaoId === k.id);
+    if (!u) $('lgErr').textContent = `연결되지 않은 카카오 계정입니다(${k.nickname || '이름 없음'}). 처음 한 번은 이름·비밀번호로 로그인한 뒤 ⚙ 설정 → 내 계정에서 "카카오 연결"을 눌러 주세요.`;
+    else signedIn(u);
+  } catch (e) { $('lgErr').textContent = String(e.message || e).replace(/^Error invoking remote method 'kakao-login': (Error: )?/, ''); }
+  $('lgKakao').disabled = false;
+};
+$('meKakaoBtn').onclick = async () => {
+  const u = auth.me; if (!u) return;
+  try {
+    if (u.kakaoId) { auth.me = await saveUser(Object.assign({}, u, { kakaoId: '', kakaoNick: '' })); meSay('카카오 연결을 끊었습니다.'); return drawKakao(); }
+    const k = await kakaoApi.login(kakao.key); await loadUsers().catch(() => {}); const other = auth.users.find(x => x.kakaoId === k.id && x.name !== u.name);
+    if (other) return meSay(`이 카카오 계정은 이미 "${other.name}"에 연결돼 있습니다.`);
+    auth.me = await saveUser(Object.assign({}, u, { kakaoId: k.id, kakaoNick: k.nickname })); meSay('카카오를 연결했습니다. 다음부터 "카카오로 로그인"으로 들어올 수 있습니다.'); drawKakao();
+  } catch (e) { meSay('카카오 연결을 하지 못했습니다: ' + String(e.message || e).replace(/^Error invoking remote method 'kakao-login': (Error: )?/, '')); }
+};
+
 /* 사람을 따라가는 설정: 색·업체 (users 와 같은 공유 폴더, userpref/<이름>) */
 async function loadPrefs() {
   if (!auth.me || !window.learnApi) return;
@@ -532,7 +665,7 @@ async function loadPrefs() {
 let prefTimer = 0;
 function savePrefs() { if (!auth.me || !window.learnApi) return; clearTimeout(prefTimer); prefTimer = setTimeout(() => learnApi.put({ tool: 'userpref', client: auth.me.name, rec: 'pref', items: [{ kind: 'pref', ts: Date.now(), colors: userTones(), client: hubSettings.client() }] }).catch(() => {}), 800); }
 
-applyTones(); drawClientChip(); startLogin(); loadClients().then(() => { drawClients(); for (const id in frames) pushClient(id); });
+applyTones(); drawClientChip(); startLogin(); setTimeout(() => runBackup().catch(e => logErr('hub', 'backup', e.message)), 20000); loadClients().then(() => { drawClients(); for (const id in frames) pushClient(id); });
 loadSharedGpt();
 let last = null; try { last = localStorage.getItem('hub-tab'); } catch {}
 open(TOOLS.some(t => t[0] === last) ? last : 'cut');

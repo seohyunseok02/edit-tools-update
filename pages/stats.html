@@ -69,6 +69,10 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     <div id="clients" style="display:flex;flex-direction:column;gap:18px"></div>
   </section>
   <section>
+    <h2>편집자별 <small>효과자막을 배울 때 로그인해 있던 사람 기준 (로그인 기능 이전 기록은 "기록 없음")</small></h2>
+    <div class="tbl"><table id="editors"></table></div>
+  </section>
+  <section>
     <h2>다른 편집기 <small>업체 구분 없이 함께 배우는 편집기</small></h2>
     <div class="tbl"><table id="common"></table></div>
   </section>
@@ -1339,9 +1343,10 @@ function buildCut(P, seq, keep) {
 /* ================= 컷편집 분석: 프리미어 받아쓰기 단어 → 발화 단위 → 규칙 판단 → 남길 구간 =================
    시간은 모두 원본 시퀀스 틱. 받아쓰기 단어 시각은 소스 기준이라 클립의 속도(예: 103%)로 나눠 타임라인으로 옮긴다. */
 const CUT_STRENGTH = { // 초. pre/post = 말 앞뒤 여유, maxGap = 이보다 긴 공백만 줄인다, qa = 질문 뒤 남길 간격
-  soft: { maxGap: 0.7, pre: 0.14, post: 0.24, qa: 0.6 },
-  normal: { maxGap: 0.45, pre: 0.1, post: 0.18, qa: 0.45 },
-  strong: { maxGap: 0.3, pre: 0.08, post: 0.14, qa: 0.35 },
+  // 사람이 고친 컷편집(17편)을 재 보니 남긴 말 앞뒤를 앞 0.5초·뒤 0.7초쯤 늘려 쓴 곳이 많았다(받아쓰기 단어 시간이 실제 소리보다 짧게 잡힘) → 여유를 넓힌다
+  soft: { maxGap: 0.7, pre: 0.35, post: 0.5, qa: 0.6 },
+  normal: { maxGap: 0.45, pre: 0.25, post: 0.35, qa: 0.5 },
+  strong: { maxGap: 0.3, pre: 0.15, post: 0.25, qa: 0.4 },
 };
 const CUT_FILLER = /^(어+|음+|으+음*|에+|엄+)[.,?!…~]*$/;
 const CUT_NG = /다시\s*(할게|갈게|하겠|해\s*볼|한\s*번)|(^|\s)다시[.!]?$|죄송합니다|한\s*번\s*더\s*(할게|갈게|하겠)|엔지|(^|\s)NG|잠깐만요?|잠시만요|(^|\s)컷[.!]?$|스탠바이|큐[.!]?$/;
@@ -1382,6 +1387,7 @@ function cutRules(units) {
   }
   for (let i = 0; i < units.length; i++) {
     const a = cutNorm(units[i].text); if (a.length < 6 || units[i].d === 'drop') continue;
+    if (/[?？]\s*$/.test(units[i].text)) continue; // 질문은 재시도가 아니다("~어떻게 되죠?" 뒤에 같은 말로 답하는 흐름)
     for (let j = i + 1; j < units.length && j <= i + 6 && units[j].t0 - units[i].t1 < 60 * TICKS; j++) {
       const b = cutNorm(units[j].text); if (b.length < 6) continue;
       const head = Math.min(a.length, b.length, 14), same = lcsAlign(a.slice(0, head), b.slice(0, head)).len / head;
@@ -1394,12 +1400,15 @@ function cutRules(units) {
 function cutKeep(units, strength, end) {
   const o = typeof strength === 'object' ? strength : CUT_STRENGTH[strength] || CUT_STRENGTH.normal, pre = o.pre * TICKS, post = o.post * TICKS, maxGap = o.maxGap * TICKS;
   const ws = []; for (const u of units) if (u.d !== 'drop') for (const w of u.words) if (!w.filler || u.d === 'review') ws.push(Object.assign({ q: u.q && w === u.words[u.words.length - 1] }, w));
+  // 말더듬: 바로 붙어 같은 낱말을 두 번 말하면("그래서 그래서", "보통 보통") 앞의 것을 뺀다 (사람이 손으로 지우던 것)
+  const wn = w => String(w.w || '').replace(/[\s.,!?~…"'“”]/g, '');
+  for (let k = ws.length - 2; k >= 0; k--) { const a = ws[k], b = ws[k + 1]; if (!a.q && wn(a).length >= 2 && wn(a) === wn(b) && b.t - a.e < 0.6 * TICKS) { b.cutFrom = Math.max(a.e, b.cutFrom || 0); b.cutTo = Math.min(a.t, b.cutTo || Infinity); ws.splice(k, 1); } } // cutTo~cutFrom = 뺀 낱말 자리
   const out = []; let cur = null;
   ws.forEach((w, k) => {
     const prev = ws[k - 1], gap = prev ? w.t - prev.e : Infinity, tail = prev && prev.q ? Math.max(post, o.qa * TICKS - pre) : post;
-    if (cur && (gap <= maxGap || gap <= tail + pre)) { cur.t1 = Math.max(cur.t1, w.e + post); cur.wb = w.e; return; } // 자연스러운 짧은 간격은 그대로
-    if (cur) cur.t1 = prev.e + tail; // 긴 공백(또는 뺀 말)은 앞 말 뒤 여유 + 뒷말 앞 여유만 남긴다
-    cur = { t0: Math.max(0, w.t - pre, cur ? cur.t1 : 0), t1: w.e + post, wa: w.t, wb: w.e }; out.push(cur); // wa/wb = 첫 말 시작·끝 말 끝 (경계 조정의 기준)
+    if (cur && !w.cutFrom && (gap <= maxGap || gap <= tail + pre)) { cur.t1 = Math.max(cur.t1, w.e + post); cur.wb = w.e; return; } // 자연스러운 짧은 간격은 그대로
+    if (cur) cur.t1 = w.cutFrom ? Math.max(prev.e, Math.min(prev.e + tail, w.cutTo)) : prev.e + tail; // 긴 공백(또는 뺀 말)은 앞 말 뒤 여유 + 뒷말 앞 여유만 남긴다. 말더듬은 뺀 낱말 앞에서 끊는다
+    cur = { t0: Math.max(0, w.cutFrom || 0, w.t - pre, cur ? cur.t1 : 0), t1: w.e + post, wa: w.t, wb: w.e }; out.push(cur); // wa/wb = 첫 말 시작·끝 말 끝 (경계 조정의 기준). 말더듬은 뺀 낱말 끝(cutFrom)부터
   });
   if (cur) cur.t1 = Math.min(end || Infinity, cur.t1);
   return out.filter(r => r.t1 - r.t0 > 0.05 * TICKS);
@@ -1918,7 +1927,7 @@ function byProject(items) {
   const m = new Map();
   for (const it of items || []) { if (!it || !it.rec || !okItem(it)) continue; let p = m.get(it.rec); if (!p) m.set(it.rec, p = { rec: it.rec, at: it.at || 0, k: {}, said: new Set(), summary: null }); p.at = Math.min(p.at || Infinity, it.at || Infinity);
     if (it.kind === 'summary') p.summary = it; else { p.k[it.kind] = (p.k[it.kind] || 0) + 1; if (it.kind === 'design' || it.kind === 'text') p.said.add(it.said + '|' + (it.now != null ? it.now : it.text)); } }
-  return [...m.values()].sort((a, b) => a.at - b.at).map(p => { const s = p.summary; return { rec: p.rec, at: p.at, project: s && s.project || '', gen: s ? s.gen : null, kept: s ? s.kept : null, changed: s ? s.changed : p.said.size, removed: s ? s.removed : (p.k.removed || 0), added: s ? s.added : (p.k.added || 0), rule: s && s.rule ? s.rule.mode : null, n: Object.values(p.k).reduce((a, c) => a + c, 0) }; });
+  return [...m.values()].sort((a, b) => a.at - b.at).map(p => { const s = p.summary; return { rec: p.rec, at: p.at, project: s && s.project || '', gen: s ? s.gen : null, kept: s ? s.kept : null, changed: s ? s.changed : p.said.size, removed: s ? s.removed : (p.k.removed || 0), added: s ? s.added : (p.k.added || 0), rule: s && s.rule ? s.rule.mode : null, editor: s && s.editor || '', client: s && s.client || '', n: Object.values(p.k).reduce((a, c) => a + c, 0) }; });
 }
 const RULE = { suggest: '규칙: 제안만', auto: '규칙: 자동 적용', off: '규칙: 끔' };
 
@@ -1983,6 +1992,16 @@ function render(clients, common, cfg) {
     box.append(card);
   }
   if (!clients.length) box.append(el('p', { class: 'note', text: '등록된 효과자막 업체가 없습니다.' }));
+
+  // 편집자별: 요약이 있는 프로젝트로 "그대로 쓴 비율" 평균과 고친 양
+  const ed = new Map(); for (const c of clients) for (const p of c.projects) { const k = p.editor || ''; let e = ed.get(k); if (!e) ed.set(k, e = { name: k, ps: 0, sum: [], ch: 0, rm: 0, ad: 0, clients: new Set(), last: 0 }); e.ps++; e.clients.add(c.name); e.ch += p.changed || 0; e.rm += p.removed || 0; e.ad += p.added || 0; e.last = Math.max(e.last, p.at || 0); if (p.gen != null) e.sum.push(p); }
+  const et = $('editors'); et.textContent = '';
+  et.append(el('tr', {}, ...['편집자', '배운 프로젝트', '그대로 쓴 비율', '고침', '지움', '새로 넣음', '업체', '마지막'].map(h => el('th', { text: h }))));
+  for (const e of [...ed.values()].sort((a, b) => (a.name ? 0 : 1) - (b.name ? 0 : 1) || b.ps - a.ps)) {
+    const rate = e.sum.length ? Math.round(e.sum.reduce((s, p) => s + p.kept, 0) / Math.max(1, e.sum.reduce((s, p) => s + p.gen, 0)) * 100) + '%' : '—';
+    et.append(el('tr', {}, el('td', { text: e.name || '기록 없음' }), el('td', { text: String(e.ps) }), el('td', { text: rate }), ...[e.ch, e.rm, e.ad].map(v => el('td', { text: String(v) })), el('td', { class: 'p', text: [...e.clients].join(', ') }), el('td', { text: e.last ? day(e.last) : '—' })));
+  }
+  if (!ed.size) et.append(el('tr', {}, el('td', { text: '아직 기록이 없습니다', colspan: '8' })));
 
   const t = $('common'); t.textContent = '';
   t.append(el('tr', {}, ...["편집기", "배운 것", "프로젝트", "마지막"].map(h => el('th', { text: h }))));
