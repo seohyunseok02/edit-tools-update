@@ -38,12 +38,13 @@ td.f{font-family:var(--mono);word-break:break-all}
 <div class="wrap">
   <header>
     <h1>글꼴 점검</h1>
-    <p>프로젝트 자막이 쓰는 글꼴이 이 PC에 켜져 있는지 봅니다. 없는 글꼴은 "구하는 곳"대로 NAS 글꼴 폴더(<code>2. 디자인 템플릿\__font</code>)에서 파일을 오른쪽 클릭 → 설치하거나, 산돌구름에서 이름과 형식(TTF/OTF)을 똑같이 맞춰 켠 뒤 "다시 확인"을 누르세요. 프리미어는 글꼴을 켠 다음에 열어야 합니다. 프로젝트 파일은 바꾸지 않습니다.</p>
+    <p>프로젝트 자막이 쓰는 글꼴이 이 PC에 켜져 있는지 봅니다. 같은 글꼴이 다른 형식(TTF/OTF)으로만 켜져 있으면 "켜진 형식으로 연결"로 바로 고친 새 프로젝트를 만들 수 있습니다. 없는 글꼴은 "구하는 곳"대로 NAS 글꼴 폴더(<code>2. 디자인 템플릿\__font</code>)에서 파일을 오른쪽 클릭 → 설치하거나, 산돌구름에서 이름과 형식(TTF/OTF)을 똑같이 맞춰 켠 뒤 "다시 확인"을 누르세요. 프리미어는 글꼴을 켠 다음에 열어야 합니다. 프로젝트 파일은 바꾸지 않습니다.</p>
   </header>
   <section>
     <div class="drop" id="drop">.prproj 파일을 여기에 끌어다 놓거나 <button id="btnPick">프로젝트 고르기</button><input type="file" id="file" accept=".prproj" hidden></div>
     <div class="msg" id="err" hidden></div>
-    <div class="actions"><button id="btnRe" hidden>다시 확인</button><button id="btnCopy" hidden>없는 글꼴 이름 복사</button><span class="note" id="state"></span></div>
+    <div class="actions"><button id="btnRe" hidden>다시 확인</button><button id="btnCopy" hidden>없는 글꼴 이름 복사</button><button id="btnLink" hidden>켜진 형식으로 연결해 새 프로젝트 저장</button><span class="note" id="state"></span></div>
+    <p class="note" id="linkNote" hidden></p>
     <p class="sum" id="sum"></p>
     <div id="out"></div>
   </section>
@@ -401,6 +402,14 @@ class Proj {
     if (inN) inN.textContent = String(i);
     outN.textContent = String(i + (end - start));
   }
+  /* 텍스트 데이터를 이 레이어에만 새로 쓴다. 같은 데이터를 나눠 쓰던 다른 레이어에는 원래 내용이 남게 한다 */
+  writeBlob(param, nb) {
+    const skv = ch(param, 'StartKeyframeValue'); const h = skv.getAttribute('BinaryHash'), own = skv.textContent.trim() !== '';
+    if (own) { const all = this.hashIdx.get(h) || []; const others = all.filter(e => e !== skv && !e.textContent.trim()); if (others.length && !all.some(e => e !== skv && e.textContent.trim())) others[0].textContent = skv.textContent; }
+    this._delHash(skv);
+    const raw = skv.textContent, tail = own ? raw.slice(raw.trimEnd().length) : '';
+    skv.textContent = toB64(nb) + tail; skv.setAttribute('BinaryHash', randHash(nb.length)); this._addHash(skv);
+  }
   setText(L, text, opt) {
     if (!text) text = ' ';
     if (!L.param || ch(L.param, 'Keyframes')) throw new Error('키프레임이 있는 텍스트는 바꿀 수 없습니다');
@@ -417,11 +426,7 @@ class Proj {
     text = segs.map((s, i) => s + (gapRun[i] ? ' ' : '')).join('');
     // 같은 글자의 조각이 섞이지 않게 먼저 임시 표식으로 바꾼 뒤 실제 글자를 넣는다
     let nb = this.blob(L.param); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, '@@seg' + i + '@@', parts[i]); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, segs[i] || ' ', '@@seg' + i + '@@');
-    const skv = ch(L.param, 'StartKeyframeValue'); const h = skv.getAttribute('BinaryHash'), own = skv.textContent.trim() !== '';
-    if (own) { const all = this.hashIdx.get(h) || []; const others = all.filter(e => e !== skv && !e.textContent.trim()); if (others.length && !all.some(e => e !== skv && e.textContent.trim())) others[0].textContent = skv.textContent; }
-    this._delHash(skv);
-    const raw = skv.textContent, tail = own ? raw.slice(raw.trimEnd().length) : '';
-    skv.textContent = toB64(nb) + tail; skv.setAttribute('BinaryHash', randHash(nb.length)); this._addHash(skv);
+    this.writeBlob(L.param, nb);
     const inst = ch(L.comp, 'Component', 'InstanceName');
     if (inst) inst.textContent = text.replace(/[\r\n]+/g, ' ').trim();
     L.text = text; L.parts = segs.slice();
@@ -1830,12 +1835,29 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+/* 글꼴 다시 연결: 같은 글꼴의 다른 형식 이름(TT…↔OT…, …TTF↔…OTF)으로 프로젝트의 그래픽 텍스트 글꼴 이름을 바꾼다.
+   map = {옛 이름: 새 이름} (길이가 같은 것만: 텍스트 데이터 크기를 바꾸지 않고 글자만 갈아 끼운다). 키프레임이 있는 텍스트는 건너뛴다 */
+function relinkFonts(P, map) {
+  const enc = s => new TextEncoder().encode(s), pairs = Object.entries(map).filter(([a, b]) => a !== b && a.length === b.length && /^[\x20-\x7e]+$/.test(a + b)).map(([a, b]) => [enc(a), enc(b), a]);
+  const count = {}, seen = new Set(); let layers = 0, skipped = 0;
+  const swap = bb => { let hit = false; for (const [a, b, name] of pairs) for (let i = bb.indexOf(a[0]); i >= 0 && i <= bb.length - a.length; i = bb.indexOf(a[0], i + 1)) { let k = 1; while (k < a.length && bb[i + k] === a[k]) k++; if (k === a.length && !(bb[i + k] >= 0x21 && bb[i + k] <= 0x7e) && !(i > 0 && bb[i - 1] >= 0x21 && bb[i - 1] <= 0x7e)) { bb.set(b, i); count[name] = (count[name] || 0) + 1; hit = true; } } return hit; };
+  for (const node of P.root.querySelectorAll('VideoClipTrackItem')) {
+    let c; try { c = P.info(node); } catch { continue; }
+    for (const L of c.layers || []) {
+      if (!L.param || seen.has(L.param)) continue; seen.add(L.param);
+      if (ch(L.param, 'Keyframes')) { if (pairs.some(([, , n]) => L.font === n)) skipped++; continue; }
+      let bb; try { bb = new Uint8Array(P.blob(L.param)); } catch { continue; }
+      if (swap(bb)) { P.writeBlob(L.param, bb); layers++; }
+    }
+  }
+  return { layers, skipped, count };
+}
+const Engine = { TICKS, relinkFonts, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
 <script>
-const E = window.Engine, $ = id => document.getElementById(id), st = { name: '', used: null, missing: [] };
+const E = window.Engine, $ = id => document.getElementById(id), st = { name: '', used: null, missing: [], bytes: null, link: {} };
 const err = t => { $('err').hidden = !t; $('err').textContent = t || ''; };
 /* 프로젝트 자막(그래픽 텍스트) 글꼴 → 쓰인 횟수 */
 async function usedFonts(bytes, name) {
@@ -1849,25 +1871,38 @@ async function localNames() {
   return new Set((await queryLocalFonts()).map(f => f.postscriptName));
 }
 // shortcut: NAS에 올려 둔 무료 글꼴 목록을 이름 규칙으로 적어 둠, NAS에 글꼴을 더 올리면 여기에도 더할 것
-const NAS = '\\\\Nas\\상상이상\\2. 디자인 템플릿\\__font', ONNAS = [[/^(Pretendard|GmarketSans|MaruBuri|Cafe24(Danjunghae|Dangdanghae|Supermagic)|BMkkubulim|Poppins-SemiBold)/, '무료글꼴_공식배포'], [/^KoPubWorld/, 'KOPUBWORLD_TTF_FONTS2026']];
-const where = f => { const n = ONNAS.find(([r]) => r.test(f)); return n ? 'NAS ' + n[1] + ' 폴더에서 설치' : '산돌구름에서 켜기'; };
+const FREE = new Set('BMDoHyeon-OTF BMJUA BMkkubulimTTF-Regular BMYEONSUNG Cafe24Dangdanghae Cafe24DangdanghaeOTF Cafe24Danjunghae Cafe24DanjunghaeOTF Cafe24Ohsquare Cafe24Shiningstar Cafe24Ssukssuk Cafe24Ssurround Cafe24Supermagic-Bold Cafe24Supermagic-OTF-Bold Cafe24Supermagic-OTF-Regular Cafe24Supermagic-Regular Dongle-Light GmarketSansBold GmarketSansLight GmarketSansMedium GmarketSansTTFBold GmarketSansTTFLight GmarketSansTTFMedium GowunBatang-Bold GowunBatang-Regular MaruBuri-Bold MaruBuri-ExtraLight MaruBuri-Light MaruBuriot-Bold MaruBuriot-ExtraLight MaruBuriot-Light MaruBuriot-Regular MaruBuriot-SemiBold MaruBuri-Regular MaruBuri-SemiBold NanumBarunpen-Bold NanumMyeongjo NanumMyeongjoBold NanumMyeongjoExtraBold NanumMyeongjoOTFBold NanumMyeongjoOTFExtraBold NanumSquareNeoTTF-eHv NanumSquareRoundEB Paperlogy-3Light Paperlogy-5Medium Paperlogy-7Bold Paperlogy-8ExtraBold Paperlogy-9Black Poppins-Bold Poppins-Light Poppins-Regular Poppins-SemiBold Pretendard-Black Pretendard-Bold Pretendard-ExtraBold Pretendard-ExtraLight Pretendard-Light Pretendard-Medium Pretendard-Regular Pretendard-SemiBold Pretendard-Thin SUIT-Bold SUIT-Medium SUIT-Thin'.split(' '));
+const NAS = '\\\\Nas\\상상이상\\2. 디자인 템플릿\\__font', ONNAS = [[f => FREE.has(f) || /^PretendardVariable-/.test(f), '무료글꼴_공식배포'], [f => /^KoPubWorld/.test(f), 'KOPUBWORLD_TTF_FONTS2026']]; // PretendardVariable-굵기 는 가변 글꼴 하나로 다 된다
+// 산돌구름은 같은 글꼴을 TTF(TT…·…TTF)와 OTF(OT…·…OTF) 이름으로 따로 준다. 프리미어는 이름이 다르면 못 찾으니 형식까지 짚어 준다
+const twin = f => [/^TT/.test(f) ? 'OT' + f.slice(2) : '', /^OT/.test(f) ? 'TT' + f.slice(2) : '', f.replace(/TTF/, 'OTF'), f.replace(/OTF/, 'TTF'), f.replace(/-TTF$/, ''), f + '-TTF'].filter(x => x && x !== f);
+const fmtOf = f => /^TT|TTF/.test(f) ? 'TTF' : /^OT|OTF/.test(f) ? 'OTF' : '';
+const where = (f, have) => {
+  const n = ONNAS.find(([r]) => r(f)); if (n) return 'NAS ' + n[1] + ' 폴더에서 설치';
+  const other = have && twin(f).find(x => have.has(x)), want = fmtOf(f);
+  if (other) return `산돌구름에서 ${want || '다른'} 형식으로 켜기 (지금은 ${fmtOf(other) || '다른 형식'}만 켜져 있어 프리미어가 못 찾음)`;
+  return '산돌구름에서 켜기' + (want ? ` (${want} 형식으로)` : '');
+};
 const kind = f => /^SD|Sandoll/i.test(f) ? '산돌' : '';
-const fmt = f => /TTF/i.test(f) ? 'TTF' : /OTF/i.test(f) ? 'OTF' : '';
+const fmt = f => fmtOf(f);
 async function check(quiet) {
   if (!st.used) return; if (!quiet) err(''); $('state').textContent = '이 PC 글꼴을 읽는 중…';
   let have; try { have = await localNames(); } catch (e) { $('state').textContent = ''; return quiet ? null : err(e.message); } // 창으로 돌아올 때 다시 보기는 실패해도 조용히
   st.missing = st.used.filter(([f]) => !have.has(f)).map(([f]) => f);
-  const rows = st.used.map(([f, c]) => { const ok = have.has(f); return `<tr><td class="f">${f}</td><td>${kind(f)}${fmt(f) ? ' ' + fmt(f) : ''}</td><td class="n">${c}</td><td><span class="tag ${ok ? 'ok' : 'no'}">${ok ? '켜짐' : '없음'}</span></td><td class="note">${ok ? '' : where(f)}</td></tr>`; });
+  const rows = st.used.map(([f, c]) => { const ok = have.has(f); return `<tr><td class="f">${f}</td><td>${kind(f)}${fmt(f) ? ' ' + fmt(f) : ''}</td><td class="n">${c}</td><td><span class="tag ${ok ? 'ok' : 'no'}">${ok ? '켜짐' : '없음'}</span></td><td class="note">${ok ? '' : where(f, have)}</td></tr>`; });
   // 없는 것을 위로
   rows.sort((a, b) => (/tag no/.test(b) ? 1 : 0) - (/tag no/.test(a) ? 1 : 0));
   $('out').innerHTML = `<table><thead><tr><th>글꼴 (프리미어가 찾는 이름)</th><th>종류</th><th style="text-align:right">쓰인 곳</th><th>이 PC</th><th>구하는 곳</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
   $('sum').textContent = `${st.name}: 글꼴 ${st.used.length}개 중 ${st.missing.length ? st.missing.length + '개가 이 PC에 없습니다.' : '모두 켜져 있습니다.'}`;
   $('btnRe').hidden = false; $('btnCopy').hidden = !st.missing.length;
+  // 같은 글꼴의 다른 형식이 켜져 있으면(이름 길이가 같은 것만) 프로젝트 쪽 이름을 그 형식으로 바꿔 연결할 수 있다
+  st.link = {}; for (const f of st.missing) { const o = twin(f).find(x => have.has(x) && x.length === f.length); if (o) st.link[f] = o; }
+  const ln = Object.entries(st.link); $('btnLink').hidden = !ln.length; $('linkNote').hidden = !ln.length;
+  $('linkNote').textContent = ln.length ? `형식만 다른 같은 글꼴이 켜져 있어 바로 연결할 수 있는 글꼴 ${ln.length}개: ` + ln.map(([a, b]) => `${a} → ${b}`).join(', ') + '. 원본은 그대로 두고 "_글꼴연결" 새 파일로 저장합니다.' : '';
   $('state').textContent = `이 PC 글꼴 ${have.size}개와 맞춰 봤습니다 (${new Date().toLocaleTimeString()}).`;
 }
 async function load(f) {
   err(''); $('out').innerHTML = ''; $('sum').textContent = ''; $('state').textContent = f.name + ' 읽는 중…';
-  try { st.name = f.name; st.used = await usedFonts(new Uint8Array(await f.arrayBuffer()), f.name); if (!st.used.length) throw new Error('이 프로젝트에서 그래픽 텍스트 글꼴을 찾지 못했습니다'); await check(); }
+  try { st.name = f.name; st.bytes = new Uint8Array(await f.arrayBuffer()); st.used = await usedFonts(st.bytes, f.name); if (!st.used.length) throw new Error('이 프로젝트에서 그래픽 텍스트 글꼴을 찾지 못했습니다'); await check(); }
   catch (e) { $('state').textContent = ''; err('읽지 못했습니다: ' + e.message); }
 }
 $('btnPick').onclick = () => $('file').click();
@@ -1876,6 +1911,21 @@ const d = $('drop');
 d.ondragover = e => { e.preventDefault(); d.classList.add('on'); }; d.ondragleave = () => d.classList.remove('on');
 d.ondrop = e => { e.preventDefault(); d.classList.remove('on'); const f = [...e.dataTransfer.files].find(x => /\.prproj$/i.test(x.name)); if (f) load(f); else err('.prproj 파일을 넣어 주세요.'); };
 $('btnRe').onclick = () => check();
+async function saveProj(bytes, name) {
+  if (window.__testSave) { window.__saved = { name, bytes }; return name; }
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  if (window.showSaveFilePicker) { try { const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(blob); await w.close(); return name; } catch (e) { if (e && e.name === 'AbortError') return null; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); return name;
+}
+$('btnLink').onclick = async () => {
+  err(''); $('btnLink').disabled = true; $('state').textContent = '글꼴을 연결하는 중…';
+  try {
+    const P = await E.Proj.fromBytes(st.bytes, st.name), r = E.relinkFonts(P, st.link); if (!r.layers) throw new Error('바꿀 글꼴을 프로젝트에서 찾지 못했습니다');
+    const name = st.name.replace(/\.prproj$/i, '') + '_글꼴연결.prproj', saved = await saveProj(await P.encode(), name);
+    $('state').textContent = saved ? `${saved} 로 저장했습니다: 텍스트 ${r.layers}곳의 글꼴을 연결했습니다${r.skipped ? ` (키프레임이 있는 텍스트 ${r.skipped}곳은 그대로)` : ''}. 프리미어에서 이 파일을 여세요.` : '저장을 취소했습니다.';
+  } catch (e) { $('state').textContent = ''; err('연결하지 못했습니다: ' + e.message); }
+  $('btnLink').disabled = false;
+};
 $('btnCopy').onclick = async () => { try { await navigator.clipboard.writeText(st.missing.join('\n')); $('state').textContent = '없는 글꼴 이름을 복사했습니다. 산돌구름 검색창에 붙여 찾으세요.'; } catch { err('복사하지 못했습니다.'); } };
 window.addEventListener('focus', () => { if (st.used) check(true); }); // 산돌구름에서 켜고 돌아오면 바로 다시 맞춰 본다
 </script>

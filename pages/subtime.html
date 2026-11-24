@@ -516,6 +516,14 @@ class Proj {
     if (inN) inN.textContent = String(i);
     outN.textContent = String(i + (end - start));
   }
+  /* 텍스트 데이터를 이 레이어에만 새로 쓴다. 같은 데이터를 나눠 쓰던 다른 레이어에는 원래 내용이 남게 한다 */
+  writeBlob(param, nb) {
+    const skv = ch(param, 'StartKeyframeValue'); const h = skv.getAttribute('BinaryHash'), own = skv.textContent.trim() !== '';
+    if (own) { const all = this.hashIdx.get(h) || []; const others = all.filter(e => e !== skv && !e.textContent.trim()); if (others.length && !all.some(e => e !== skv && e.textContent.trim())) others[0].textContent = skv.textContent; }
+    this._delHash(skv);
+    const raw = skv.textContent, tail = own ? raw.slice(raw.trimEnd().length) : '';
+    skv.textContent = toB64(nb) + tail; skv.setAttribute('BinaryHash', randHash(nb.length)); this._addHash(skv);
+  }
   setText(L, text, opt) {
     if (!text) text = ' ';
     if (!L.param || ch(L.param, 'Keyframes')) throw new Error('키프레임이 있는 텍스트는 바꿀 수 없습니다');
@@ -532,11 +540,7 @@ class Proj {
     text = segs.map((s, i) => s + (gapRun[i] ? ' ' : '')).join('');
     // 같은 글자의 조각이 섞이지 않게 먼저 임시 표식으로 바꾼 뒤 실제 글자를 넣는다
     let nb = this.blob(L.param); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, '@@seg' + i + '@@', parts[i]); for (let i = 0; i < parts.length; i++) nb = fbReplace(nb, segs[i] || ' ', '@@seg' + i + '@@');
-    const skv = ch(L.param, 'StartKeyframeValue'); const h = skv.getAttribute('BinaryHash'), own = skv.textContent.trim() !== '';
-    if (own) { const all = this.hashIdx.get(h) || []; const others = all.filter(e => e !== skv && !e.textContent.trim()); if (others.length && !all.some(e => e !== skv && e.textContent.trim())) others[0].textContent = skv.textContent; }
-    this._delHash(skv);
-    const raw = skv.textContent, tail = own ? raw.slice(raw.trimEnd().length) : '';
-    skv.textContent = toB64(nb) + tail; skv.setAttribute('BinaryHash', randHash(nb.length)); this._addHash(skv);
+    this.writeBlob(L.param, nb);
     const inst = ch(L.comp, 'Component', 'InstanceName');
     if (inst) inst.textContent = text.replace(/[\r\n]+/g, ' ').trim();
     L.text = text; L.parts = segs.slice();
@@ -1945,7 +1949,24 @@ function drawGuide() {
   const t = d.getElementById(s.target); if (t && t.offsetParent !== null && !t.closest('section.off')) t.classList.add('now-target');
 }
 
-const Engine = { TICKS, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+/* 글꼴 다시 연결: 같은 글꼴의 다른 형식 이름(TT…↔OT…, …TTF↔…OTF)으로 프로젝트의 그래픽 텍스트 글꼴 이름을 바꾼다.
+   map = {옛 이름: 새 이름} (길이가 같은 것만: 텍스트 데이터 크기를 바꾸지 않고 글자만 갈아 끼운다). 키프레임이 있는 텍스트는 건너뛴다 */
+function relinkFonts(P, map) {
+  const enc = s => new TextEncoder().encode(s), pairs = Object.entries(map).filter(([a, b]) => a !== b && a.length === b.length && /^[\x20-\x7e]+$/.test(a + b)).map(([a, b]) => [enc(a), enc(b), a]);
+  const count = {}, seen = new Set(); let layers = 0, skipped = 0;
+  const swap = bb => { let hit = false; for (const [a, b, name] of pairs) for (let i = bb.indexOf(a[0]); i >= 0 && i <= bb.length - a.length; i = bb.indexOf(a[0], i + 1)) { let k = 1; while (k < a.length && bb[i + k] === a[k]) k++; if (k === a.length && !(bb[i + k] >= 0x21 && bb[i + k] <= 0x7e) && !(i > 0 && bb[i - 1] >= 0x21 && bb[i - 1] <= 0x7e)) { bb.set(b, i); count[name] = (count[name] || 0) + 1; hit = true; } } return hit; };
+  for (const node of P.root.querySelectorAll('VideoClipTrackItem')) {
+    let c; try { c = P.info(node); } catch { continue; }
+    for (const L of c.layers || []) {
+      if (!L.param || seen.has(L.param)) continue; seen.add(L.param);
+      if (ch(L.param, 'Keyframes')) { if (pairs.some(([, , n]) => L.font === n)) skipped++; continue; }
+      let bb; try { bb = new Uint8Array(P.blob(L.param)); } catch { continue; }
+      if (swap(bb)) { P.writeBlob(L.param, bb); layers++; }
+    }
+  }
+  return { layers, skipped, count };
+}
+const Engine = { TICKS, relinkFonts, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
