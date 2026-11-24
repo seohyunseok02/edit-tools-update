@@ -1236,7 +1236,8 @@ function addToParam(p, delta) {
 function hideSmall(P, ti, smallComp, off) {
   setBypass(P, smallComp, off); const comps = P.comps(ti), i = comps.indexOf(smallComp); if (i < 0) return; const between = [];
   for (let k = i + 1; k < comps.length; k++) { const mn = txt(ch(comps[k], 'MatchName')); if (mn === 'AE.ADBE Text') break; between.push([comps[k], mn]); }
-  const groups = between.filter(x => /SubGroup/i.test(x[1])), target = groups.length ? groups : between.filter(x => /Shape/i.test(x[1]));
+  // 첨자 바로 뒤 첫 묶음만 첨자 박스로 본다. 그 뒤 묶음은 본문을 담고 있을 수 있다(예: effect 폴더 안 본문 → 같이 끄면 본문이 사라짐)
+  const groups = between.filter(x => /SubGroup/i.test(x[1])).slice(0, 1), target = groups.length ? groups : between.filter(x => /Shape/i.test(x[1]));
   for (const x of target) setBypass(P, x[0], off);
 }
 
