@@ -2,7 +2,7 @@
  {
   "path": "hub.html",
   "size": 9691,
-  "sha256": "59bd84b66b6f8f69fd8c51704d25be78080fa156d8efcc1b3e2898aff3a7a58c"
+  "sha256": "66d7f1f34c14c4ef99bc37598c8efb06e1952d16a4b8cd53ca9ead5a24cfdf3d"
  },
  {
   "path": "pages/cut.html",
@@ -16,8 +16,8 @@
  },
  {
   "path": "pages/fonts.html",
-  "size": 190291,
-  "sha256": "bc47313a56256b34533690a253b80358f415044f2240f718c517e7571635b7bd"
+  "size": 191330,
+  "sha256": "830464e5bf9c5e07dee17afd6a3a01148bbf8eeee60d7f702c413a04beee9687"
  },
  {
   "path": "pages/fx.html",
@@ -92,6 +92,6 @@
  {
   "path": "version.json",
   "size": 73,
-  "sha256": "92d5c8a45c35fadc0ce5a7aed88ff00d575cd04a039bf5cd471527858fc809ae"
+  "sha256": "b08aa0ebe9c309d931351dbf11e8793802c65969a790208a5a14d01135f2f498"
  }
 ]
