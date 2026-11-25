@@ -38,6 +38,24 @@ input[type=text],input[type=number],input[type=password],select,textarea{backgro
 textarea{width:100%;min-height:110px;font:12px/1.5 var(--mono)}
 ::placeholder{color:var(--mute);opacity:1}
 .drops{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cards{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.card{border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--panel)}
+.card .hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.card .tt{flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px}
+.card .tt small{font-weight:400;color:var(--mute);font-size:12px;margin-left:6px}
+.card .sub{color:var(--mute);font-size:13px}
+.ico{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;font-size:13px;border:1px solid var(--line);color:var(--mute);flex:none}
+.ico.ok{background:var(--ok,#1f6b3b);border-color:transparent;color:#fff}
+.drop.mini{padding:7px 14px;border-radius:8px;font-size:14px;font-weight:600;min-height:0;display:inline-flex;align-items:center}
+details.more{position:relative}
+details.more>summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:14px}
+details.more>summary::-webkit-details-marker{display:none}
+details.more .menu{position:absolute;right:0;z-index:5;margin-top:6px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:220px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+details.fold>summary{cursor:pointer;color:var(--mute);font-size:14px;padding:4px 0}
+details.card.fold>summary{color:var(--ink);font-weight:600}
+.parts .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--line)}
+.parts .row span{flex:1;min-width:200px;font-size:13px}
+.toast{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:8px 12px;font-size:14px}
 @media (max-width:640px){.drops{grid-template-columns:1fr}}
 .drop{border:2px dashed var(--line);border-radius:10px;padding:18px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0}
 .drop b{font-size:15px}.drop span{color:var(--mute);font-size:13px;word-break:break-all}
@@ -104,18 +122,32 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
       <label>업체 <select id="client"></select></label>
       <input type="text" id="newName" placeholder="새 업체 이름" style="width:170px">
       <button id="btnAdd">업체 추가</button>
-      <button id="btnDel">이 업체 삭제</button>
-      <button id="btnExport">업체 설정 내보내기</button>
-      <button id="btnImport">설정 불러오기</button>
+      <details class="more"><summary>업체 관리 ⋯</summary><div class="menu"><button id="btnDel">이 업체 삭제</button><button id="btnExport">업체 설정 내보내기</button><button id="btnImport">설정 불러오기</button></div></details>
       <input type="file" id="fileImport" accept=".json" hidden>
     </div>
-    <div class="drops">
-      <div class="drop" id="dropT" tabindex="0" role="button"><b>미드폼 디자인 템플릿</b><span id="nameT">이 업체의 템플릿 .prproj 를 넣으세요</span></div>
-      <div class="drop" id="dropL" tabindex="0" role="button"><b>스타일 배우기 (선택)</b><span id="nameL">이 업체의 완성 프로젝트 .prproj 를 2~3개 넣으세요</span></div>
+    <!-- 상태 카드: 첫 줄에 됐는지·요약, 할 일은 버튼 하나, 나머지는 ⋯ 메뉴나 접기 안에 -->
+    <div class="cards">
+      <div class="card" id="cardT">
+        <div class="hd"><span class="ico" id="icoT">○</span><div class="tt"><b>템플릿 <small>필수</small></b><span class="sub" id="nameT">이 업체의 템플릿 .prproj 를 넣으세요</span></div>
+          <div class="drop mini" id="dropT" tabindex="0" role="button">템플릿 넣기</div></div>
+      </div>
+      <div class="card" id="cardL">
+        <div class="hd"><span class="ico" id="icoL">○</span><div class="tt"><b>스타일 <small>선택 · 있으면 우리 업체 방식과 더 비슷하게</small></b><span class="sub" id="nameL">완성 프로젝트를 넣으면 넣는 자리·빈도·문구 방식을 배웁니다</span></div>
+          <div class="drop mini" id="dropL" tabindex="0" role="button">완성 프로젝트 넣기</div>
+          <details class="more"><summary aria-label="스타일 메뉴">⋯</summary><div class="menu">
+            <button id="btnStyleFresh" type="button">처음부터 다시 배우기</button>
+            <button id="btnStyleReset" type="button">스타일 초기화</button>
+            <button id="btnStyleUndo" type="button" disabled>이전 학습 가져오기</button>
+            <label class="note">최근 <select id="styleKeep"><option value="5">5편</option><option value="10">10편</option><option value="20">20편</option><option value="0">제한 없이</option></select> 까지 배움</label>
+          </div></details></div>
+        <p class="note" id="styleResetNote"></p>
+        <details class="fold" id="partsFold"><summary id="partsSum">배운 프로젝트 보기</summary><div id="partsWrap"></div></details>
+        <div id="borrowWrap"></div>
+      </div>
+      <details class="card fold" id="designFold"><summary id="designSum">쓸 디자인</summary><div id="designWrap"></div></details>
+      <div class="toast" id="styleToast" hidden><span id="styleToastText"></span><button type="button" id="styleToastUndo">되돌리기</button></div>
     </div>
-    <div class="row"><button id="btnStyleReset" type="button">스타일 초기화</button><button id="btnStyleUndo" type="button" disabled>이전 학습 가져오기</button><span class="note" id="styleResetNote"></span></div>
-    <div class="row"><label for="styleMode">스타일 배우기에 넣을 때</label><select id="styleMode"><option value="add">기존 것에 더하기</option><option value="new">새로 배우기 (기존 것 비우고 넣은 것만)</option></select>
-      <label for="styleKeep">이 업체는 최근</label><select id="styleKeep"><option value="5">5편</option><option value="10">10편</option><option value="20">20편</option><option value="0">제한 없이</option></select><span class="note">까지 배움 (넘으면 오래된 것부터 빠짐, 📌 고정은 늘 남김)</span></div>
+    <select id="styleMode" hidden aria-hidden="true"><option value="add">더하기</option><option value="new">새로</option></select>
     <input type="file" id="fileT" accept=".prproj" hidden><input type="file" id="fileL" accept=".prproj" multiple hidden>
     <div class="kv" id="clientInfo" hidden></div>
     <div class="note" id="learnNote" hidden></div>
@@ -2209,11 +2241,18 @@ function openPicker(cur, onPick) {
   back.append(box); document.body.append(back); const f = box.querySelector('.pvcell.sel') || box.querySelector('.pvcell'); if (f) f.focus();
 }
 function renderClient() {
-  const c = st.clients[st.cur], box = $('clientInfo'); box.textContent = ''; box.hidden = !c; drawStyleBtns();
-  $('nameT').textContent = c && c.tplName ? c.tplName + ' · ' + c.tplDate + ' 등록 (다시 넣으면 교체)' : '이 업체의 템플릿 .prproj 를 넣으세요'; $('dropT').classList.toggle('ok', !!(c && c.tplName));
-  $('nameL').textContent = c && c.style ? `완성 프로젝트 ${c.style.projects}개에서 배움 (더 넣으면 더해짐 · 3~5개 권장)` : '이 업체의 완성 프로젝트 .prproj 를 3~5개 넣으세요 (여러 개 한꺼번에 가능)'; $('dropL').classList.toggle('ok', !!(c && c.style));
+  const c = st.clients[st.cur], box = $('designWrap'); box.textContent = ''; $('partsWrap').textContent = ''; $('borrowWrap').textContent = ''; drawStyleBtns();
+  // 템플릿 카드
+  const hasT = !!(c && c.tplName); $('icoT').textContent = hasT ? '✓' : '○'; $('icoT').classList.toggle('ok', hasT);
+  $('nameT').textContent = hasT ? `${c.tplName} · ${c.tplDate} 등록${st.cat ? ` · 디자인 ${st.cat.designs.length}종` : ''}` : '이 업체의 템플릿 .prproj 를 넣으세요 (꼭 필요)'; $('dropT').textContent = hasT ? '템플릿 바꾸기' : '템플릿 넣기';
+  // 스타일 카드: 첫 줄 요약
+  const s0 = c && c.style, kp = keepOf(c); $('icoL').textContent = s0 ? '✓' : '○'; $('icoL').classList.toggle('ok', !!s0);
+  $('nameL').textContent = !c ? '' : s0 ? `완성 프로젝트 ${s0.projects}편에서 배움 · 1분에 ${s0.perMin}개 · ${kp ? `최근 ${kp}편까지` : '제한 없이'}` : c.borrow ? `${c.borrow.from} 스타일을 빌려 쓰는 중` : '아직 배우지 않았습니다. 완성 프로젝트 3~5편을 넣으면 우리 업체 방식대로 넣습니다.';
+  $('dropL').textContent = s0 ? '프로젝트 더 넣기' : '완성 프로젝트 넣기';
+  const nParts = Object.keys((c && c.parts) || {}).length; $('partsFold').hidden = !nParts; $('partsSum').textContent = `배운 프로젝트 ${nParts}편 보기 (📌 고정 · 빼기)`;
   if (!c) return;
   if (st.cat) {
+    $('designSum').textContent = `쓸 디자인 · ${st.cat.designs.length}종 중 ${st.cat.designs.filter(d => isOn(c, d)).length}종 사용 (눌러서 펼치기)`;
     const chips = el('div', { class: 'usage' });
     st.cat.designs.forEach((d, k) => { const p = pvOf(d), b = el('button', { id: 'dz-' + k, class: 'chip' + (isOn(c, d) ? ' on' : '') + (p ? ' pic' : ''), title: isOn(c, d) ? '누르면 이 디자인을 쓰지 않습니다' : '누르면 이 디자인을 다시 씁니다' }, p ? el('img', { src: p, alt: '' }) : null, el('span', { text: d.name })); b.onclick = async () => { c.off = c.off || {}; c.off[d.name] = isOn(c, d); await saveClient(); renderClient(); }; chips.append(b); });
     const miss = missingPV().length, inApp = !!(window.parent && window.parent !== window && window.parent.thumbApi);
@@ -2221,16 +2260,16 @@ function renderClient() {
       inApp ? el('div', { class: 'actions' }, el('button', { id: 'btnPrev', text: miss ? `디자인 사진 만들기 (${miss}개 없음)` : '디자인 사진 다시 확인', onclick: () => makePreviews() }), el('span', { class: 'note', id: 'pvState', text: st.pvMsg || (miss ? '프리미어를 끈 상태에서 누르면 템플릿의 디자인마다 사진을 뽑아 옵니다. 업체당 한 번이면 되고, 템플릿이 바뀌면 바뀐 디자인만 다시 뽑습니다.' : '') })) : null, chips);
     if ($('btnPrev')) $('btnPrev').disabled = !!st.pvBusy;
   }
-  if (c.style) {
-    const s = c.style, u = Object.entries(s.usage).sort((a, b) => b[1] - a[1]);
-    const clr = el('button', { id: 'btnForget', text: '배운 스타일 모두 지우기' }); clr.onclick = async () => { snapStyle(c); delete c.style; delete c.parts; await saveClient(); renderClient(); };
-    box.append(el('div', { text: `이 업체의 스타일: 1분에 ${s.perMin}개 · 평균 ${s.avgDur}초 · 예시 ${s.examples.length}개 · 완성 프로젝트 ${s.projects}개에서 배움` }),
-      el('div', { class: 'note', text: (keepOf(c) ? `최근 ${keepOf(c)}편까지 씁니다(📌 고정한 것은 늘 남김). 넘게 넣으면 가장 오래된 것이 빠집니다.` : '넣은 프로젝트를 모두 씁니다(제한 없음).') + ` 편집기가 만든 효과자막을 프리미어에서 고쳐 저장하면 그 완성본도 자동으로 여기에 들어갑니다.` + (s.projects < 3 ? ' 3~5편이 있으면 어디에 넣고 안 넣는지를 더 잘 따라 합니다.' : '') }));
-    renderParts(box, c);
-    box.append(el('div', { class: 'actions' }, clr, (c.styleHist || []).length ? el('button', { id: 'btnUndoStyle', text: `이전 학습으로 되돌리기 (${ymd(c.styleHist.at(-1).at)})`, onclick: () => undoStyle(c) }) : null), el('div', { class: 'usage' }, ...u.slice(0, 14).map(([k, v]) => el('span', { class: 'tag', text: `${k} ${v}` }))));
+  if (c.style) { // 접힌 목록 안: 배운 프로젝트(고정·빼기)와 디자인별 사용 횟수
+    const s = c.style, u = Object.entries(s.usage).sort((a, b) => b[1] - a[1]), pw = $('partsWrap');
+    pw.append(el('div', { class: 'note', text: `평균 ${s.avgDur}초 · 예시 ${s.examples.length}개. ${kp ? `최근 ${kp}편까지 쓰고 넘으면 오래된 것부터 빠집니다(📌 고정은 늘 남김).` : '넣은 프로젝트를 모두 씁니다.'} 편집기가 만든 효과자막을 프리미어에서 고쳐 저장하면 그 완성본도 자동으로 들어갑니다.` }));
+    renderParts(pw, c); pw.append(el('div', { class: 'usage' }, ...u.slice(0, 14).map(([k, v]) => el('span', { class: 'tag', text: `${k} ${v}` }))));
     $('perMin').value = s.perMin || 6;
-  } else if (st.cat && !c.borrow) { box.append(el('div', { class: 'note', text: '스타일을 배우지 않은 상태입니다. 디자인 이름(예: 부정/금지, 행복/기쁨)만 보고 고릅니다.' })); if ((c.styleHist || []).length) box.append(el('div', { class: 'actions' }, el('button', { id: 'btnUndoStyle', text: `이전 학습으로 되돌리기 (${ymd(c.styleHist.at(-1).at)})`, onclick: () => undoStyle(c) }))); }
-  if (st.cat) renderBorrow(box, c);
+  }
+  // 다른 업체 스타일 빌려오기: 자기 스타일이 없을 때만 접어서 보여 주고, 빌려 쓰는 중이면 한 줄로
+  if (st.cat && (c.borrow || !c.style)) { const bw = $('borrowWrap');
+    if (c.borrow) renderBorrow(bw, c);
+    else { const d = el('details', { class: 'fold' }, el('summary', { text: '완성 프로젝트가 없나요? 다른 업체 스타일 빌려오기' })); renderBorrow(d, c); bw.append(d); } }
   const es = effStyle(c); if (es && es.perMin) $('perMin').value = es.perMin;
 }
 function ready() { const ok = !!(st.cat); $('s2').classList.toggle('off', !ok); const ok2 = ok && !!st.M; $('s3').classList.toggle('off', !ok2); $('s4').classList.toggle('off', !ok2); $('s5').classList.toggle('off', !ok2); renderGuide(); }
@@ -2252,7 +2291,8 @@ hookDrop('dropL', 'fileL', async files => {
   show('err1', ''); if (!st.cat) return show('err1', '먼저 이 업체의 템플릿을 넣어 주세요. 디자인 이름을 알아야 스타일을 읽을 수 있습니다.');
   $('nameL').textContent = '읽는 중…'; await new Promise(r => setTimeout(r, 30)); const parts = [], bad = [];
   for (const f of files) { try { const P = await E.Proj.fromBytes(new Uint8Array(await f.arrayBuffer()), f.name), s = E.learnStyle(P, st.cat); s.file = f.name; if (s.count) parts.push(s); else bad.push(f.name + ' (이 템플릿의 효과자막을 찾지 못함)'); } catch (er) { bad.push(f.name + ' (' + er.message + ')'); } }
-  if (parts.length) { const c = st.clients[st.cur], fresh = $('styleMode') && $('styleMode').value === 'new'; snapStyle(c); if (fresh) c.parts = {}; addParts(c, parts); await saveClient(); }
+  const fresh = st.styleFresh || ($('styleMode') && $('styleMode').value === 'new'); st.styleFresh = false;
+  if (parts.length) { const c = st.clients[st.cur]; snapStyle(c); if (fresh) c.parts = {}; addParts(c, parts); await saveClient(); styleToast(fresh ? `처음부터 다시 배웠습니다 (${parts.length}편)` : `${parts.length}편을 더 배웠습니다`); }
   renderClient(); if (bad.length) show('err1', '읽지 못한 파일: ' + bad.join(', '));
 });
 /* ---------- 배운 스타일 관리: 최근 STYLE_KEEP편만 쓰고(고정한 것은 늘 남김), 바꿀 때마다 직전 상태를 5개까지 보관 ----------
@@ -2272,7 +2312,7 @@ function renderParts(box, c) {
   const list = el('div', { class: 'parts' });
   for (const n of names) { const p = c.parts[n];
     const pin = el('button', { text: p.pinned ? '📌 고정됨' : '📌 고정', title: p.pinned ? '누르면 고정을 풉니다(최근 5편에서 밀리면 빠짐)' : '누르면 최근 5편에서 밀려도 빠지지 않습니다' }); pin.onclick = async () => { snapStyle(c); p.pinned = !p.pinned; await saveClient(); renderClient(); };
-    const rm = el('button', { text: '빼기' }); rm.onclick = async () => { snapStyle(c); delete c.parts[n]; restyle(c); await saveClient(); renderClient(); };
+    const rm = el('button', { text: '빼기' }); rm.onclick = async () => { snapStyle(c); delete c.parts[n]; restyle(c); await saveClient(); renderClient(); styleToast(`${n}을(를) 뺐습니다`); };
     list.append(el('div', { class: 'row' }, el('span', { text: `${ymd(p.addedAt)} · ${n}${p.auto ? ' (사람이 고친 완성본에서 자동)' : ''} · 효과자막 ${p.count || 0}개` }), pin, rm)); }
   box.append(list);
 }
@@ -2280,19 +2320,25 @@ async function undoStyle(c) { const h = (c.styleHist || []).pop(); if (!h) retur
 /* 스타일 배우기 칸 옆 버튼: 초기화(배운 스타일 비우기, 되돌릴 수 있게 보관) · 이전 학습 가져오기(초기화·변경 직전 상태로) */
 function drawStyleBtns() {
   const c = st.clients[st.cur], has = !!(c && c.parts && Object.keys(c.parts).length), h = c && (c.styleHist || []).length;
-  $('btnStyleReset').disabled = !has; $('btnStyleUndo').disabled = !h; $('styleKeep').value = String(keepOf(c)); $('styleKeep').disabled = !c;
-  $('styleResetNote').textContent = !c ? '' : has ? `지금 배운 프로젝트 ${Object.keys(c.parts).length}편` : h ? '배운 스타일이 없습니다. "이전 학습 가져오기"로 되돌릴 수 있습니다.' : '배운 스타일이 없습니다.';
+  $('btnStyleReset').disabled = !has; $('btnStyleUndo').disabled = !h; $('styleKeep').value = String(keepOf(c)); $('styleKeep').disabled = !c; $('btnStyleFresh').disabled = !c;
+  $('btnStyleUndo').textContent = h ? `이전 학습 가져오기 (${ymd(c.styleHist.at(-1).at)})` : '이전 학습 가져오기'; $('styleResetNote').textContent = '';
 }
+/* 바꾼 직후 몇 초 동안만 "되돌리기" 알림 (메뉴의 "이전 학습 가져오기"와 같은 일) */
+let toastTimer = 0;
+function styleToast(msg) { $('styleToastText').textContent = msg; $('styleToast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('styleToast').hidden = true; }, 10000); }
+$('styleToastUndo').onclick = async () => { const c = st.clients[st.cur]; $('styleToast').hidden = true; if (c) { await undoStyle(c); styleToast('되돌렸습니다'); } };
+const closeMenus = () => document.querySelectorAll('details.more[open]').forEach(d => d.open = false);
+$('btnStyleFresh').onclick = () => { closeMenus(); if (!st.cat) return show('err1', '먼저 이 업체의 템플릿을 넣어 주세요.'); st.styleFresh = true; $('fileL').click(); }; // 지금 배운 것을 비우고 고른 프로젝트로만 다시 배운다
 $('btnStyleReset').onclick = async () => {
-  const c = st.clients[st.cur]; if (!c || !c.parts) return;
-  if (!confirm(`${c.name}의 배운 스타일(프로젝트 ${Object.keys(c.parts).length}편)을 초기화할까요?\n"이전 학습 가져오기"로 다시 되돌릴 수 있습니다.`)) return;
-  snapStyle(c); delete c.style; delete c.parts; await saveClient(); renderClient(); $('styleResetNote').textContent = '초기화했습니다. 완성 프로젝트를 스타일 배우기 칸에 다시 넣으세요.';
+  closeMenus(); const c = st.clients[st.cur]; if (!c || !c.parts) return;
+  if (!confirm(`${c.name}의 배운 스타일(프로젝트 ${Object.keys(c.parts).length}편)을 초기화할까요?\n바로 아래 "되돌리기"나 ⋯ 메뉴의 "이전 학습 가져오기"로 되돌릴 수 있습니다.`)) return;
+  snapStyle(c); delete c.style; delete c.parts; await saveClient(); renderClient(); styleToast('스타일을 초기화했습니다');
 };
 $('styleKeep').onchange = async () => { // 줄이면 넘는 만큼 오래된 것이 빠진다(되돌리기 가능)
   const c = st.clients[st.cur]; if (!c) return; const v = +$('styleKeep').value; snapStyle(c); c.styleKeep = v; if (c.parts) addParts(c, []); await saveClient(); renderClient();
   $('styleResetNote').textContent = v ? `이 업체는 최근 ${v}편까지 배웁니다.` : '이 업체는 넣은 프로젝트를 모두 배웁니다.';
 };
-$('btnStyleUndo').onclick = async () => { const c = st.clients[st.cur]; if (!c) return; await undoStyle(c); $('styleResetNote').textContent = `이전 학습을 가져왔습니다 (배운 프로젝트 ${Object.keys(c.parts || {}).length}편).`; };
+$('btnStyleUndo').onclick = async () => { closeMenus(); const c = st.clients[st.cur]; if (!c) return; await undoStyle(c); $('styleResetNote').textContent = `이전 학습을 가져왔습니다 (배운 프로젝트 ${Object.keys(c.parts || {}).length}편).`; };
 $('btnExport').onclick = async () => {
   const c = st.clients[st.cur]; if (!c) return show('err1', '내보낼 업체가 없습니다.');
   const data = JSON.stringify({ kind: 'fx-client', name: c.name, tplName: c.tplName, tplDate: c.tplDate, tpl: c.tplBytes ? b64(c.tplBytes) : '', style: c.style || null, parts: c.parts || null, borrow: c.borrow || null, off: c.off || null }), fn = `효과자막설정_${c.name}.json`;
