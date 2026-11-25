@@ -2107,12 +2107,46 @@ function pickSeq(i) {
   st.voices.forEach((v, k) => vs.append(el('option', { value: k, text: `A${v.track + 1} · ${v.name} (단어 ${v.words.length})` })));
   const cams = seq.vtracks.map((t, k) => { const it = P.items(t)[0]; return it ? `V${k + 1}: ${E.baseName(P.info(it).media) || P.info(it).name}` : null; }).filter(Boolean);
   if (!st.voices.length) { show('err1', '이 시퀀스의 오디오에 프리미어 받아쓰기가 없습니다. 프리미어에서 텍스트 패널 → 받아쓰기를 실행하고 저장한 뒤 다시 넣어 주세요.'); st.voice = null; }
-  else { show('err1', ''); vs.value = String(st.voices.length - 1); st.voice = st.voices[st.voices.length - 1]; }
+  else { show('err1', ''); vs.value = String(st.voices.length - 1); st.voice = st.voices[st.voices.length - 1]; loadEnv(); }
   $('info').textContent = `${seq.name} · ${tc(st.end / T)} · ${(T / seq.frame).toFixed(2).replace(/\.00$/, '')}fps · 영상 ${seq.vtracks.length}트랙 · 오디오 ${seq.atracks.length}트랙` + (cams.length ? ' · ' + cams.join(', ') : '') + '. 판단 기준 목소리는 노이즈 제거가 걸린 메인 마이크를 고르세요(자르는 건 모든 트랙 공통입니다).';
   st.units = []; refresh();
 }
 $('seqSel').onchange = () => pickSeq(+$('seqSel').value);
-$('voiceSel').onchange = () => { st.voice = st.voices[+$('voiceSel').value]; st.units = []; refresh(); };
+$('voiceSel').onchange = () => { st.voice = st.voices[+$('voiceSel').value]; st.units = []; loadEnv(); refresh(); };
+
+/* 실제 소리로 경계 맞추기: 받아쓰기 단어 시간이 실제 소리와 조금 어긋나, 프로그램 경계는 앞에 빈 곳이 남고 말끝이 잘렸다
+   (리셋치과 1순위: 사람이 앞의 빈 곳 0.07~0.17초를 자르고, 아직 소리 나는 끝을 0.07~0.14초 늘림).
+   목소리 원본이 wav(또는 옆에 프리미어가 만든 "… Audio Extracted.wav")면 소리 세기를 재 두고, 앞은 소리 시작 0.04초 전까지 줄이고
+   끝은 소리가 끝날 때까지(최대 0.4초, 다음 말 전까지) 늘린다. wav가 없으면 받아쓰기 시간 그대로. */
+const envs = {}; // 원본 파일 → { db/voiced(10ms), step } | null
+async function wavEnv(p) {
+  try {
+    const url = fileUrl(p), blob = await (await fetch(url)).blob(), h = new DataView(await blob.slice(0, 4096).arrayBuffer());
+    if (h.byteLength < 44 || h.getUint32(0) !== 0x52494646) return null; // RIFF
+    let o = 12, f = null, data = 0; while (o + 8 <= h.byteLength) { const id = h.getUint32(o), sz = h.getUint32(o + 4, true); if (id === 0x666d7420) f = { tag: h.getUint16(o + 8, true), ch: h.getUint16(o + 10, true), sr: h.getUint32(o + 12, true), bits: h.getUint16(o + 22, true) }; if (id === 0x64617461) { data = o + 8; break; } o += 8 + sz + (sz & 1); }
+    const flt = f && f.bits === 32 && (f.tag === 3 || f.tag === 0xFFFE); if (!data || !f || !(flt || f.bits === 16)) return null;
+    // 원본 6표본(모든 채널)의 세기를 1표본으로 모아 8kHz 남짓 한 줄로 만든 뒤 엔진의 소리 구간 찾기를 쓴다
+    const fr = f.ch * f.bits / 8, G = 6, n = Math.floor((blob.size - data) / fr / G), pcm = new Float32Array(n), CH = 1 << 22; let k = 0;
+    for (let a = data; a < blob.size && k < n; a += CH) { const dv = new DataView(await blob.slice(a, Math.min(blob.size, a + CH)).arrayBuffer()), m = Math.floor(dv.byteLength / fr / G);
+      for (let i = 0; i < m && k < n; i++, k++) { let s = 0; for (let j = 0; j < G * f.ch; j++) { const q = (i * G * f.ch + j) * f.bits / 8, v = flt ? dv.getFloat32(q, true) : dv.getInt16(q, true) / 32768; s += v * v; } pcm[k] = Math.sqrt(s / (G * f.ch)); } }
+    return E.energyEnvelope(pcm, f.sr / G);
+  } catch (e) { return null; }
+}
+async function loadEnv() {
+  const v = st.voice; if (!v) return;
+  for (const c of v.clips) { const m = c.media; if (!m || m in envs) continue; envs[m] = null; envs[m] = await wavEnv(/\.wav$/i.test(m) ? m : m.replace(/\.[^.\\/]+$/, '') + ' Audio Extracted.wav'); }
+  if (st.voice === v && st.units.length && v.clips.some(c => envs[c.media])) { recalc(); refresh(); }
+}
+function snapEdges(keep) {
+  const ws = st.voice ? st.voice.words : [], at = t => { const c = st.voice.clips.find(c => t >= c.start && t < c.end), e = c && envs[c.media]; return e ? { e, k: Math.round((c.inPoint + (t - c.start) * c.rate) / T / e.step), c } : null; };
+  const nextWord = t => { let lo = 0, hi = ws.length; while (lo < hi) { const m = (lo + hi) >> 1; if (ws[m].t > t) hi = m; else lo = m + 1; } return ws[lo] ? ws[lo].t : Infinity; };
+  let n = 0;
+  for (const r of keep) {
+    const a = at(r.t0); if (a && !a.e.voiced[a.k]) { let j = a.k; while (j < a.k + 80 && j < a.e.voiced.length && !a.e.voiced[j]) j++; const nt = r.t0 + (j - 4 - a.k) * a.e.step * T / a.c.rate; if (j < a.k + 80 && nt > r.t0 + 0.02 * T) { r.t0 = Math.min(nt, r.wa); n++; } }
+    const b = at(r.t1 - 1); if (b && b.e.voiced[b.k]) { let j = b.k; while (j < b.k + 40 && b.e.voiced[j]) j++; const nt = Math.min(r.t1 + (j + 4 - b.k) * b.e.step * T / b.c.rate, r.t1 + 0.4 * T, nextWord(r.wb + 0.01 * T) - 0.03 * T); if (nt > r.t1 + 0.02 * T) { r.t1 = nt; n++; } }
+  }
+  st.snapped = n;
+}
 hookDrop('dropS', 'fileS', async file => {
   try {
     const b = new Uint8Array(await file.arrayBuffer());
@@ -2249,6 +2283,7 @@ const keptSec = () => st.keep.reduce((a, r) => a + r.t1 - r.t0, 0) / T;
 function recalc() {
   if (!st.units.length) { st.keep = []; st.bounds = []; return; }
   const keep = E.cutKeep(st.units, strengthWithLearned(), st.end), f = T / 20;
+  snapEdges(keep); // 실제 소리에 먼저 맞추고, 사람이 경계 검수에서 옮긴 만큼을 그 위에 더한다
   for (const r of keep) { r.t0 += (st.adj['s' + Math.round(r.wa / f)] || 0) * T; r.t1 += (st.adj['e' + Math.round(r.wb / f)] || 0) * T; }
   for (let k = 1; k < keep.length; k++) if (keep[k].t0 < keep[k - 1].t1) keep[k].t0 = keep[k - 1].t1; // 늘린 경계가 겹치지 않게
   st.keep = orderKeep(keep.filter(r => r.t1 - r.t0 > T / 30)); st.bounds = E.cutBoundaries(st.units, st.keep); st.built = null;
@@ -2449,7 +2484,7 @@ $('btnBuild').onclick = async () => {
     $('log').textContent = [`원본 ${tc(st.end / T)} → 편집본 ${tc(sec)} (남긴 구간 ${r.segs.length}개, 영상 클립 ${r.video}개, 소리 클립 ${r.audio}개).`,
       `발화 ${st.units.length}개 중 삭제 ${n('drop')}개, 검토로 남김 ${n('review')}개.`,
       sec > maxMin * 60 ? `⚠ 상한 ${maxMin}분보다 ${((sec - maxMin * 60) / 60).toFixed(1)}분 깁니다. 2번의 "줄일 후보"를 확인해 주세요.${st.ai && st.ai.note ? ' AI: ' + st.ai.note : ''}` : '',
-      ...r.log.map(x => '· ' + x), '· 모든 영상·오디오 트랙을 같은 지점에서 잘랐습니다. 카메라 선택은 프리미어에서 하면 됩니다.', '· 시퀀스 마커는 옮기지 않았습니다.', '', msg].filter(x => x !== '').join('\n');
+      ...r.log.map(x => '· ' + x), st.snapped ? `· 경계 ${st.snapped}곳을 실제 소리(wav)에 맞췄습니다(앞의 빈 곳 줄이기·말끝 살리기).` : '· 목소리 wav가 없어 경계는 받아쓰기 시간대로 잘랐습니다.', '· 모든 영상·오디오 트랙을 같은 지점에서 잘랐습니다. 카메라 선택은 프리미어에서 하면 됩니다.', '· 시퀀스 마커는 옮기지 않았습니다.', '', msg].filter(x => x !== '').join('\n');
     $('buildState').textContent = '만들었습니다.';
   } catch (er) { show('err3', '만들지 못했습니다: ' + (er.message || er)); $('buildState').textContent = ''; }
   refresh();
