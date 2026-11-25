@@ -188,7 +188,7 @@ dialog legend{font-weight:700;padding:0 4px}
 'use strict';
 /* 롱폼은 실제 작업 순서대로: 컷편집 → 자막 올리기(자막 타이밍) → 효과자막 → 맞춤법 → 소제목·구간 → 하이라이트 */
 const GROUPS = [['롱폼 (작업 순서)', [['cut', '컷편집'], ['subtime', '자막 타이밍'], ['fx', '효과자막'], ['spell', '맞춤법 검사'], ['subtitle', '소제목·구간'], ['highlight', '하이라이트']], true],
-  ['쇼츠', [['shorts', '쇼츠'], ['extract', '추출쇼츠']]], ['도구', [['thumb', '썸네일 캡쳐'], ['nukki', '누끼 따기'], ['fonts', '글꼴 점검']]], ['', [['stats', '학습 현황']]]];
+  ['쇼츠', [['shorts', '쇼츠'], ['extract', '추출쇼츠']]], ['도구', [['thumb', '썸네일 캡쳐'], ['nukki', '누끼 따기'], ['fonts', '글꼴 점검']]], ['', [['stats', '학습 현황'], ['usage', '사용 현황']]]];
 const TOOLS = GROUPS.flatMap(g => g[1]);
 const toneOf = id => GROUPS[0][1].some(t => t[0] === id) ? 'long' : GROUPS[1][1].some(t => t[0] === id) ? 'shorts' : 'tools'; // 묶음별 포인트 색
 const nav = document.querySelector('nav'), main = document.getElementById('main'), top_ = document.getElementById('top'), frames = {}, $ = id => document.getElementById(id);
@@ -199,7 +199,7 @@ function open(id) {
   for (const [k] of TOOLS) { $('tab-' + k).setAttribute('aria-selected', String(k === id)); if (frames[k]) frames[k].hidden = k !== id; }
   if (!frames[id]) { const f = document.createElement('iframe'); f.src = 'pages/' + id + '.html'; f.title = TOOLS.find(t => t[0] === id)[1]; f.addEventListener('load', () => onFrameLoad(id)); main.append(f); frames[id] = f; }
   try { localStorage.setItem('hub-tab', id); } catch {}
-  $('workbar').dataset.tone = toneOf(id); drawWorkbar();
+  $('workbar').dataset.tone = toneOf(id); drawWorkbar(); try { uTouch(s => { s.opens[id] = (s.opens[id] || 0) + 1; }); } catch (e) {}
 }
 for (const [title, items, numbered] of GROUPS) {
   const tone = toneOf(items[0][0]);
@@ -208,6 +208,7 @@ for (const [title, items, numbered] of GROUPS) {
     b.innerHTML = (numbered ? `<span class="n">${i + 1}</span>` : '') + `<span>${name}</span><span class="done" hidden>✓</span>`; b.onclick = () => open(id); nav.append(b); });
 }
 document.querySelectorAll('dialog [data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+$('tab-usage').hidden = true; // 주인 확인(loadOwner) 뒤에만 보인다
 
 /* ================= 설정: GPT 연결 =================
    편집기들은 각자 GPT 칸을 숨기고 여기 값을 받아 쓴다(engine.js hubGpt). 옛 저장값(gpt-base, shorts-ai, cut-ai)도 같이 맞춰 둔다. */
@@ -409,6 +410,7 @@ function watchFrame(id) {
     w.addEventListener('error', e => logErr(id, 'error', (e.message || '') + (e.filename ? ` @${String(e.filename).split('/').pop()}:${e.lineno}` : '')));
     w.addEventListener('unhandledrejection', e => logErr(id, 'promise', e.reason && (e.reason.stack || e.reason.message) || e.reason));
     const ce = w.console.error.bind(w.console); w.console.error = (...a) => { logErr(id, 'console', a.map(x => x && x.stack || String(x)).join(' ')); ce(...a); };
+    ['mousemove', 'keydown', 'mousedown', 'wheel'].forEach(e => w.addEventListener(e, uSeen, { passive: true })); w.addEventListener('click', e => uClick(id, e.target), true); // 사용 기록
   } catch {}
 }
 function bugSnapshot(memo) {
@@ -481,7 +483,7 @@ function onFrameLoad(id) {
 }
 
 /* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
-const VER_LABEL = 'ver.1125.51'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1125.53'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
@@ -581,7 +583,38 @@ $('lgForm').onsubmit = async e => {
 async function signedIn(u, auto) {
   auth.me = u; window.__me = u.name; $('login').hidden = true; ls.set('hub-lastuser', u.name);
   if (!auto) { sessClear(); try { sessionStorage.setItem('hub-session', JSON.stringify({ name: u.name })); } catch {} }
-  drawMe(); applyRole(); drawKakao(); logSession('in'); await loadPrefs();
+  drawMe(); applyRole(); drawKakao(); logSession('in'); await loadOwner(); await loadPrefs();
+}
+/* ================= 사용 기록 (사용 현황 탭용, 주인만 봄) =================
+   하루·사람마다: 편집기별 사용 시간(창이 앞에 있고 5분 안에 손댄 때만, 15초 단위)·연 횟수·주요 버튼(.pri) 누른 횟수와 이름.
+   1분마다 usage/m<연월> (rec d<날짜><이름>) 과 usage/now(지금 접속 중) 에 남긴다. 파일 내용·자막 글자는 남기지 않는다 */
+const uDay = () => today(), uMonth = () => today().slice(0, 6);
+let uState = null, uInput = Date.now();
+const uKey = () => 'usage-' + uDay() + '-' + (auth.me ? auth.me.name : '');
+function uTouch(fn) {
+  if (!auth.me) return; if (!uState || uState.day !== uDay() || uState.name !== auth.me.name) uState = ls.get(uKey(), null) || { kind: 'day', day: uDay(), name: auth.me.name, sec: {}, opens: {}, pri: {}, top: {}, first: Date.now() };
+  fn(uState); uState.last = Date.now(); ls.set(uKey(), uState);
+}
+const uSeen = () => { uInput = Date.now(); };
+['mousemove', 'keydown', 'mousedown', 'wheel'].forEach(e => window.addEventListener(e, uSeen, { passive: true }));
+setInterval(() => { if (!auth.me || document.visibilityState !== 'visible' || !document.hasFocus() || Date.now() - uInput > 5 * 60000 || !cur || cur === 'usage') return; uTouch(s => { s.sec[cur] = (s.sec[cur] || 0) + 15; }); }, 15000);
+function uClick(tab, el) { // 편집기 안 버튼 누름: 주요 버튼(.pri)만 이름까지 센다
+  const b = el && el.closest && el.closest('button'); if (!b || !b.classList.contains('pri')) return; const label = (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24); if (!label) return;
+  uTouch(s => { s.pri[tab] = (s.pri[tab] || 0) + 1; const k = tab + '|' + label; s.top[k] = (s.top[k] || 0) + 1; });
+}
+async function uFlush() {
+  if (!auth.me || !window.learnApi) return; const t = Date.now();
+  try { if (uState) await learnApi.put({ tool: 'usage', client: 'm' + uMonth(), rec: 'd' + uDay() + hex(auth.me.name), items: [uState] });
+    const idle = Date.now() - uInput > 5 * 60000 || document.visibilityState !== 'visible';
+    await learnApi.put({ tool: 'usage', client: 'now', rec: 'now', items: [{ kind: 'now', name: auth.me.name, tab: cur, ts: t, idle }] }); } catch (e) {}
+}
+setInterval(uFlush, 60000); window.addEventListener('beforeunload', () => { uFlush(); });
+/* 사용 현황은 주인(owner)만: appcfg/공통 의 owner. 없고 관리자가 한 명뿐이면 그 사람이 주인이 된다 */
+let owner = '';
+async function loadOwner() {
+  if (!window.learnApi) return; try { const x = ((await learnApi.load({ tool: 'appcfg', client: '공통' })).items || []).filter(i => i && i.kind === 'owner' && i.name).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0]; owner = x ? x.name : '';
+    if (!owner && auth.me && auth.me.role === 'admin' && admins().length === 1) { owner = auth.me.name; await learnApi.put({ tool: 'appcfg', client: '공통', rec: 'owner', items: [{ kind: 'owner', name: owner, ts: Date.now() }] }); } } catch (e) {}
+  window.__isOwner = !!(auth.me && owner === auth.me.name); $('tab-usage').hidden = !window.__isOwner; if (!window.__isOwner && cur === 'usage') open('cut');
 }
 /* 누가 어느 PC에서 언제 로그인·로그아웃했는지 남긴다(logins/공통). 학습 기록은 PC(who)와 시간이 있으므로 이것과 맞춰 편집자를 알 수 있다
    (프로그램 틀이 learnApi 를 바꾸지 못하게 막아 두어 학습 기록에 이름을 직접 붙이지는 않는다) */
