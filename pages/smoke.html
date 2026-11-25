@@ -1942,8 +1942,11 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == n
 
 /* ---------- 소리: 파일 없이 합성 (라이터·빨기·타닥·내뿜기·재 털기) ---------- */
 let ac = null, master = null, nbuf = null, soundOn = lsGet('smoke-sound', 'off') === 'on', inhale = null, crackleT = 0;
+/* 허브에서 다른 편집기로 가면 이 화면(iframe)은 숨겨질 뿐 계속 돌아가므로, 숨겨졌을 땐 소리를 통째로 멈춘다 */
+const away = () => { try { return document.hidden || !!(window.frameElement && window.frameElement.hidden); } catch { return document.hidden; } };
+setInterval(() => { if (!ac) return; if (away() || !soundOn) { if (S.puff) puffEnd(); if (ac.state === 'running') ac.suspend(); } else if (ac.state === 'suspended') ac.resume(); }, 250);
 function audio() {
-  if (!soundOn) return null;
+  if (!soundOn || away()) return null;
   if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = 0.5; master.connect(ac.destination);
     nbuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate); const d = nbuf.getChannelData(0); let b = 0; for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; b = 0.97 * b + 0.03 * w; d[i] = w * 0.6 + b * 2.2; } }
   if (ac.state === 'suspended') ac.resume(); return ac;
@@ -1962,7 +1965,7 @@ function sInhaleStop() { clearTimeout(crackleT); if (!inhale || !ac) { inhale = 
 /* 불 붙여 두기만 할 때 ASMR: 귀 가까이서 나는 듯한 바스락 깔림(sizzle) + 좌우로 흩어지는 또렷한 타닥·톡 (가끔 몰아서) */
 let idleCount = 0, sizzle = null;
 function idleCrackle() {
-  const on = S.lit && !S.puff && soundOn && !document.hidden;
+  const on = S.lit && !S.puff && soundOn && !away();
   if (on && audio()) {
     if (!sizzle) { sizzle = chain('bandpass', 5200, 0.9); sizzle.g.gain.setTargetAtTime(0.02, ac.currentTime, 0.4); }
     sizzle.g.gain.setTargetAtTime(0.012 + Math.random() * 0.022, ac.currentTime, 0.25); sizzle.f.frequency.setTargetAtTime(4200 + Math.random() * 2400, ac.currentTime, 0.3);
