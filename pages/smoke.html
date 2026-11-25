@@ -1948,8 +1948,9 @@ function audio() {
     nbuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate); const d = nbuf.getChannelData(0); let b = 0; for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; b = 0.97 * b + 0.03 * w; d[i] = w * 0.6 + b * 2.2; } }
   if (ac.state === 'suspended') ac.resume(); return ac;
 }
-function chain(type, freq, q) { const s = ac.createBufferSource(); s.buffer = nbuf; s.loop = true; s.loopStart = Math.random(); const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q || 0.7; const g = ac.createGain(); g.gain.value = 0; s.connect(f); f.connect(g); g.connect(master); s.start(); return { s, f, g }; }
-function burst(type, freq, dur, gain, at = 0, q) { if (!audio()) return; const t = ac.currentTime + at, c = chain(type, freq, q); c.g.gain.setValueAtTime(0, t); c.g.gain.linearRampToValueAtTime(gain, t + Math.min(0.01, dur / 4)); c.g.gain.exponentialRampToValueAtTime(0.0005, t + dur); c.s.stop(t + dur + 0.05); }
+function chain(type, freq, q, pan) { const s = ac.createBufferSource(); s.buffer = nbuf; s.loop = true; s.loopStart = Math.random(); const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q || 0.7; const g = ac.createGain(); g.gain.value = 0; s.connect(f); f.connect(g);
+  if (pan && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master); } else g.connect(master); s.start(); return { s, f, g }; }
+function burst(type, freq, dur, gain, at = 0, q, pan) { if (!audio()) return; const t = ac.currentTime + at, c = chain(type, freq, q, pan); c.g.gain.setValueAtTime(0, t); c.g.gain.linearRampToValueAtTime(gain, t + Math.min(0.01, dur / 4)); c.g.gain.exponentialRampToValueAtTime(0.0005, t + dur); c.s.stop(t + dur + 0.05); }
 const sLighter = () => { burst('highpass', 4200, 0.05, 0.5); burst('highpass', 3000, 0.04, 0.3, 0.07); burst('bandpass', 650, 0.55, 0.22, 0.09, 0.6); };
 const sTap = () => { burst('lowpass', 900, 0.06, 0.35); if (!audio()) return; const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime; o.frequency.value = 170; g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.07); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.08); };
 function sInhaleStart() {
@@ -1958,6 +1959,21 @@ function sInhaleStart() {
   const crackle = () => { if (!inhale) return; burst('highpass', 2400 + Math.random() * 2000, 0.008 + Math.random() * 0.01, 0.12 + Math.random() * 0.25); crackleT = setTimeout(crackle, 35 + Math.random() * 140); }; crackle();
 }
 function sInhaleStop() { clearTimeout(crackleT); if (!inhale || !ac) { inhale = null; return; } const t = ac.currentTime, c = inhale; inhale = null; c.g.gain.cancelScheduledValues(t); c.g.gain.setValueAtTime(c.g.gain.value, t); c.g.gain.linearRampToValueAtTime(0, t + 0.08); c.s.stop(t + 0.12); }
+/* 불 붙여 두기만 할 때 ASMR: 귀 가까이서 나는 듯한 바스락 깔림(sizzle) + 좌우로 흩어지는 또렷한 타닥·톡 (가끔 몰아서) */
+let idleCount = 0, sizzle = null;
+function idleCrackle() {
+  const on = S.lit && !S.puff && soundOn && !document.hidden;
+  if (on && audio()) {
+    if (!sizzle) { sizzle = chain('bandpass', 5200, 0.9); sizzle.g.gain.setTargetAtTime(0.02, ac.currentTime, 0.4); }
+    sizzle.g.gain.setTargetAtTime(0.012 + Math.random() * 0.022, ac.currentTime, 0.25); sizzle.f.frequency.setTargetAtTime(4200 + Math.random() * 2400, ac.currentTime, 0.3);
+    const n = Math.random() < 0.35 ? 2 + (Math.random() * 3 | 0) : 1, side = Math.random() * 1.6 - 0.8;
+    for (let i = 0; i < n; i++) { const at = i * (0.015 + Math.random() * 0.06), pan = Math.max(-1, Math.min(1, side + (Math.random() - 0.5) * 0.4));
+      if (Math.random() < 0.7) burst('highpass', 3000 + Math.random() * 3500, 0.003 + Math.random() * 0.006, 0.08 + Math.random() * 0.12, at, 0.7, pan); // 또렷한 탁
+      else burst('bandpass', 1100 + Math.random() * 1200, 0.015 + Math.random() * 0.02, 0.1 + Math.random() * 0.08, at, 4, pan); // 동그란 톡
+      idleCount++; }
+  } else if (sizzle) { const c = sizzle; sizzle = null; if (ac) { c.g.gain.setTargetAtTime(0, ac.currentTime, 0.15); c.s.stop(ac.currentTime + 0.8); } }
+  setTimeout(idleCrackle, 120 + Math.random() * 650);
+}
 function sExhale(dur) { if (!audio()) return; const t = ac.currentTime + 0.25, c = chain('lowpass', 1300, 0.5); c.f.frequency.setValueAtTime(1300, t); c.f.frequency.exponentialRampToValueAtTime(320, t + dur); c.g.gain.setValueAtTime(0, t); c.g.gain.linearRampToValueAtTime(0.2, t + 0.15); c.g.gain.exponentialRampToValueAtTime(0.0005, t + dur); c.s.stop(t + dur + 0.1); }
 
 /* ---------- 담배 ---------- */
@@ -2013,7 +2029,7 @@ function draw(now) {
   if (parts.length > 900) parts.splice(0, parts.length - 900);
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-requestAnimationFrame(frame);
+requestAnimationFrame(frame); idleCrackle();
 
 /* 누르기: 꺼져 있으면 불 붙이기, 재를 누르면 털기, 그 밖엔 누르는 동안 빨기 */
 cv.addEventListener('pointerdown', e => { e.preventDefault(); cv.setPointerCapture(e.pointerId); if (!S.lit) { if (!S.lighting) light(); return; } const r = cv.getBoundingClientRect(), x = e.clientX - r.left, g = geo(); if (S.ash > 4 && x > g.tip + 4 && x < g.tip + S.ash + 10 && Math.abs(e.clientY - r.top - g.y) < g.T * 1.5) { flick(); return; } puffStart(); });
