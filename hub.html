@@ -84,6 +84,12 @@ dialog legend{font-weight:700;padding:0 4px}
 .users th{color:var(--mute);font-weight:500}
 .users .off td{opacity:.5}
 .adminOnly[hidden]{display:none}
+nav button[hidden]{display:none}
+#smokeCallBtn{margin-top:auto;justify-content:center;border:1px dashed var(--line);font-weight:600}
+#smokeCallBtn[aria-pressed=true]{border-style:solid;border-color:#d9632b;color:#d9632b}
+#smokeToast{position:fixed;left:196px;bottom:16px;z-index:40;width:min(320px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-left:4px solid #d9632b;border-radius:10px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.2);display:flex;flex-direction:column;gap:8px}
+#smokeToast[hidden]{display:none}
+#smokeToast b{font-size:15px}
 </style>
 </head>
 <body>
@@ -93,6 +99,7 @@ dialog legend{font-weight:700;padding:0 4px}
   <span class="spacer"></span>
   <button class="learn" id="resetBtn" type="button" title="지금 편집기에 넣은 파일과 진행한 내용을 모두 비우고 처음부터 합니다. 로그인과 다른 편집기는 그대로입니다.">↺ 이 편집기 처음부터</button>
   <button class="learn" id="bugBtn" type="button" title="문제가 생겼을 때 눌러 주세요. 지금 화면 상태와 오류 기록을 팀 공유 폴더에 남깁니다.">🐞 오류 알리기</button>
+  <button class="learn" id="smokeBtn" type="button" title="가상 담배와 지금 흡연 중인 사람·오늘 순위">🚬 흡연실</button>
   <button class="chip" id="userChip" type="button" hidden></button>
   <button class="learn" id="setBtn" type="button">⚙ 설정</button>
   <span id="ver"></span>
@@ -105,6 +112,7 @@ dialog legend{font-weight:700;padding:0 4px}
   </div>
 </div>
 
+<div id="smokeToast" role="status" hidden><div class="row" style="align-items:flex-start"><b id="stTitle" style="flex:1"></b><button class="x" id="stX" type="button" aria-label="닫기">×</button></div><p class="note" id="stWho"></p><div class="row"><button class="btn pri" id="stGo" type="button">같이 가기</button><button class="btn" id="stPass" type="button">패스</button></div></div>
 <dialog id="setDlg" aria-labelledby="setTitle">
   <div class="hd"><h3 id="setTitle">설정</h3><button class="x" type="button" data-close aria-label="닫기">×</button></div>
   <div class="bd">
@@ -188,7 +196,7 @@ dialog legend{font-weight:700;padding:0 4px}
 'use strict';
 /* 롱폼은 실제 작업 순서대로: 컷편집 → 자막 올리기(자막 타이밍) → 효과자막 → 맞춤법 → 소제목·구간 → 하이라이트 */
 const GROUPS = [['롱폼 (작업 순서)', [['cut', '컷편집'], ['subtime', '자막 타이밍'], ['fx', '효과자막'], ['spell', '맞춤법 검사'], ['subtitle', '소제목·구간'], ['highlight', '하이라이트']], true],
-  ['쇼츠', [['shorts', '쇼츠'], ['extract', '추출쇼츠']]], ['도구', [['thumb', '썸네일 캡쳐'], ['nukki', '누끼 따기'], ['fonts', '글꼴 점검']]], ['', [['stats', '학습 현황'], ['usage', '사용 현황']]]];
+  ['쇼츠', [['shorts', '쇼츠'], ['extract', '추출쇼츠']]], ['도구', [['thumb', '썸네일 캡쳐'], ['nukki', '누끼 따기'], ['fonts', '글꼴 점검']]], ['', [['stats', '학습 현황'], ['usage', '사용 현황'], ['smoke', '흡연실']]]];
 const TOOLS = GROUPS.flatMap(g => g[1]);
 const toneOf = id => GROUPS[0][1].some(t => t[0] === id) ? 'long' : GROUPS[1][1].some(t => t[0] === id) ? 'shorts' : 'tools'; // 묶음별 포인트 색
 const nav = document.querySelector('nav'), main = document.getElementById('main'), top_ = document.getElementById('top'), frames = {}, $ = id => document.getElementById(id);
@@ -209,6 +217,50 @@ for (const [title, items, numbered] of GROUPS) {
 }
 document.querySelectorAll('dialog [data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
 $('tab-usage').hidden = true; // 주인 확인(loadOwner) 뒤에만 보인다
+$('tab-smoke').hidden = true; // 흡연실은 위쪽 🚬 버튼으로 연다
+/* ================= 흡연: 왼쪽 맨 아래 알림 버튼 + 같이 가기 알림 =================
+   smoke/call: 부름(call)·같이 가기(join)·가상으로 피우는 중(virt). smoke/m<연월>: 사람·날마다 진짜/가상 몇 대 */
+const SMOKE_MIN = 8 * 60000;
+let smokeItems = [], smokeShown = null;
+const smokeSeen = new Set(ls.get('smoke-seen', []));
+const meName = () => auth.me ? auth.me.name : '';
+async function smokeLoad() { if (!auth.me || !window.learnApi) return []; try { smokeItems = ((await learnApi.load({ tool: 'smoke', client: 'call' })).items || []).filter(x => x && x.ts && Date.now() - x.ts < 15 * 60000); } catch (e) {} return smokeItems; }
+function smokersNow() { const m = new Map(); for (const x of smokeItems) if ((x.kind === 'call' || x.kind === 'join') && Date.now() - x.ts < SMOKE_MIN) m.set(x.name, 'real');
+  const virt = new Map(); for (const x of smokeItems) if (x.kind === 'virt' && (!virt.has(x.name) || virt.get(x.name).ts < x.ts)) virt.set(x.name, x);
+  for (const [n, x] of virt) if (!x.off && Date.now() - x.ts < 90000 && !m.has(n)) m.set(n, 'virt'); return m; }
+async function smokeCount(kind) {
+  const me = meName(); if (!me) return; const k = 'smoke-' + today() + '-' + me, c = ls.get(k, { real: 0, virt: 0 }); c[kind]++; ls.set(k, c);
+  try { await learnApi.put({ tool: 'smoke', client: 'm' + uMonth(), rec: 'd' + today() + hex(me), items: [{ kind: 'count', name: me, day: today(), real: c.real, virt: c.virt, ts: Date.now() }] }); } catch (e) {}
+}
+async function smokeToday() { const pick = new Map(); try { for (const x of (await learnApi.load({ tool: 'smoke', client: 'm' + uMonth() })).items || []) if (x && x.kind === 'count' && x.day === today() && x.name) { const o = pick.get(x.name); if (!o || o.ts < x.ts) pick.set(x.name, x); } } catch (e) {} return [...pick.values()].map(x => ({ name: x.name, real: x.real || 0, virt: x.virt || 0 })); }
+function myCall() { return smokeItems.filter(x => x.kind === 'call' && x.name === meName() && Date.now() - x.ts < SMOKE_MIN).sort((a, b) => b.ts - a.ts)[0]; }
+async function smokeCall() {
+  if (!auth.me || !window.learnApi) return; await smokeLoad(); let c = myCall();
+  if (!c) { const id = Date.now(); c = { kind: 'call', name: meName(), id, ts: id }; smokeSeen.add(String(id)); try { await learnApi.put({ tool: 'smoke', client: 'call', rec: 'call', items: [c] }); } catch (e) {} smokeItems.push(c); smokeCount('real'); }
+  smokeToast(c, true); drawSmoke();
+}
+async function smokeJoin(c) { const j = { kind: 'join', name: meName(), id: c.id, ts: Date.now() }; try { await learnApi.put({ tool: 'smoke', client: 'call', rec: 'join', items: [j] }); } catch (e) {} smokeItems.push(j); smokeCount('real'); smokeToast(c, false, true); drawSmoke(); }
+function smokeToast(c, mine, joined) {
+  smokeShown = { c, mine, joined }; const t = $('smokeToast'), who = smokeItems.filter(x => x.kind === 'join' && x.id === c.id && x.name !== c.name).map(x => x.name);
+  $('stTitle').textContent = mine ? '흡연 알림을 보냈습니다 🚬' : c.name + '님이 흡연하러 갑니다 🚬';
+  $('stWho').textContent = who.length ? '같이 가는 사람: ' + [...new Set(who)].join(', ') : mine ? '아직 같이 간다는 사람이 없습니다' : (joined ? '같이 간다고 알렸습니다' : '같이 갈래요?');
+  $('stGo').hidden = $('stPass').hidden = mine || joined; t.hidden = false;
+}
+function drawSmoke() { const b = $('smokeCallBtn'); if (!b) return; const s = smokersNow().get(meName()) === 'real'; b.textContent = s ? '🚬 흡연 중' : '🚬 흡연 알림'; b.setAttribute('aria-pressed', String(s)); }
+async function smokePoll() {
+  if (!auth.me) return; await smokeLoad();
+  const calls = smokeItems.filter(x => x.kind === 'call' && x.name !== meName() && Date.now() - x.ts < 5 * 60000 && !smokeSeen.has(String(x.id))).sort((a, b) => b.ts - a.ts);
+  if (calls[0]) { const c = calls[0]; calls.forEach(x => smokeSeen.add(String(x.id))); ls.set('smoke-seen', [...smokeSeen].slice(-50)); smokeToast(c, false);
+    if (!document.hasFocus()) { try { const n = new Notification(c.name + '님이 흡연하러 갑니다 🚬', { body: '같이 가려면 눌러서 편집 도구 모음을 여세요', tag: 'smoke-' + c.id }); n.onclick = () => { try { window.focus(); } catch (e) {} n.close(); }; } catch (e) {} } }
+  else if (smokeShown && !$('smokeToast').hidden) { if (Date.now() - smokeShown.c.ts > SMOKE_MIN) $('smokeToast').hidden = true; else smokeToast(smokeShown.c, smokeShown.mine, smokeShown.joined); }
+  drawSmoke();
+}
+setInterval(smokePoll, 15000);
+window.hubSmoke = { call: smokeCall, count: smokeCount, me: meName, today: smokeToday, smokers: async () => { await smokeLoad(); return [...smokersNow()]; } };
+{ const b = document.createElement('button'); b.id = 'smokeCallBtn'; b.type = 'button'; b.title = '흡연하러 갈 때 누르면 접속한 사람들에게 같이 갈지 묻는 알림이 갑니다'; b.textContent = '🚬 흡연 알림'; b.onclick = smokeCall; nav.append(b); }
+$('smokeBtn').onclick = () => open('smoke');
+$('stGo').onclick = () => smokeShown && smokeJoin(smokeShown.c);
+$('stPass').onclick = $('stX').onclick = () => { $('smokeToast').hidden = true; };
 
 /* ================= 설정: GPT 연결 =================
    편집기들은 각자 GPT 칸을 숨기고 여기 값을 받아 쓴다(engine.js hubGpt). 옛 저장값(gpt-base, shorts-ai, cut-ai)도 같이 맞춰 둔다. */
@@ -483,7 +535,7 @@ function onFrameLoad(id) {
 }
 
 /* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
-const VER_LABEL = 'ver.1125.53'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1125.55'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
