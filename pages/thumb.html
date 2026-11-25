@@ -109,7 +109,7 @@ body{margin:0}
         <option value="custom">직접 만든 사전 설정(.epr)</option>
       </select></label>
       <label>장수 <input type="number" id="count" value="7" min="1" max="30" style="width:64px"> 장</label>
-      <label>정면 카메라 트랙 <select id="track"><option value="0">자동 (A캠 찾기)</option><option value="1">V1</option><option value="2">V2</option><option value="3">V3</option><option value="4">V4</option><option value="5">V5</option><option value="6">V6</option></select></label>
+      <label>정면 카메라 트랙 <select id="track"><option value="0">자동 (정면캠 찾기)</option><option value="1">V1</option><option value="2">V2</option><option value="3">V3</option><option value="4">V4</option><option value="5">V5</option><option value="6">V6</option></select></label>
     </div>
     <div class="actions" id="customRow" hidden>
       <button id="btnPreset">사전 설정 파일 고르기</button><span class="path" id="presetPath">아직 고르지 않았습니다</span>
@@ -2104,12 +2104,18 @@ function choose(items, count) {
   for (let i = 0; i < count; i++) { const k = i % 2 === 0 ? 'closed' : 'open', other = k === 'closed' ? 'open' : 'closed', want = quota[k] > 0 ? k : other; const got = take([want]) || take(['mid']) || take([other]); if (!got) break; if (quota[got.mouth] > 0) quota[got.mouth]--; else if (got.mouth === 'mid') quota[want]--; }
   return sel;
 }
+const CAM_OFF = 100000; // thumb.jsx 의 TOFF 와 같게
 async function analyze(cands, count, onStep) {
   const v = await loadVision(), items = [];
   for (let i = 0; i < cands.length; i++) { onStep(i + 1, cands.length); let j; try { j = judge(v, await loadImg('etv://cand/' + cands[i].name + '?t=' + Date.now())); } catch (e) { j = { ok: false, why: '분석 실패' }; } items.push(Object.assign(j, cands[i])); await new Promise(r => setTimeout(r, 0)); }
+  // 카메라가 여럿이면(시점에 카메라 번호 × 100000 이 더해져 옴) 얼굴이 정면을 보는 장면이 가장 많은 카메라만 쓴다
+  const groups = {}; for (const x of items) (groups[Math.floor(x.time / CAM_OFF)] = groups[Math.floor(x.time / CAM_OFF)] || []).push(x);
+  let camNote = '';
+  if (Object.keys(groups).length > 1) { const score = g => g.filter(x => x.ok).reduce((a, x) => a + 1 + 0.5 * x.front, 0), ranked = Object.entries(groups).sort((a, b) => score(b[1]) - score(a[1]));
+    camNote = `카메라 ${ranked.length}개를 비교해 정면 장면이 가장 많은 카메라를 골랐습니다 (` + ranked.map(([k, g]) => `${+k + 1}번 카메라 ${g.filter(x => x.ok).length}장`).join(' · ') + ')'; items.splice(0, items.length, ...ranked[0][1]); }
   const why = {}; for (const x of items) if (!x.ok) why[x.why] = (why[x.why] || 0) + 1;
   const good = items.filter(x => x.ok), picks = choose(items, count), n = k => picks.filter(x => x.mouth === k).length;
-  const note = [`후보 ${items.length}장 가운데 쓸 수 있는 장면 ${good.length}장 (입 다묾 ${good.filter(x => x.mouth === 'closed').length} · 벌림 ${good.filter(x => x.mouth === 'open').length} · 중간 ${good.filter(x => x.mouth === 'mid').length})`, Object.keys(why).length ? '뺀 장면: ' + Object.entries(why).map(([k, c]) => k + ' ' + c).join(', ') : '', `고른 장면 ${picks.length}장: 입 다묾 ${n('closed')} · 벌림 ${n('open')}` + (n('mid') ? ` · 중간 ${n('mid')}` : '')].filter(Boolean).join('\n');
+  const note = [camNote, `후보 ${items.length}장 가운데 쓸 수 있는 장면 ${good.length}장 (입 다묾 ${good.filter(x => x.mouth === 'closed').length} · 벌림 ${good.filter(x => x.mouth === 'open').length} · 중간 ${good.filter(x => x.mouth === 'mid').length})`, Object.keys(why).length ? '뺀 장면: ' + Object.entries(why).map(([k, c]) => k + ' ' + c).join(', ') : '', `고른 장면 ${picks.length}장: 입 다묾 ${n('closed')} · 벌림 ${n('open')}` + (n('mid') ? ` · 중간 ${n('mid')}` : '')].filter(Boolean).join('\n');
   return { picks, note };
 }
 
@@ -2123,7 +2129,7 @@ $('btnRun').onclick = async () => {
     if (r.cands) {
       let times;
       try { const a = await analyze(r.cands, st.count, (i, n) => { st.phase = `후보 장면을 살펴보는 중 (${i}/${n})`; }); note = a.note; times = a.picks.map(x => x.time); if (!times.length) throw new Error('인물이 정면을 보는 장면을 찾지 못했습니다'); }
-      catch (e) { note = (note ? note + '\n' : '') + '얼굴을 보고 고르지 못해 고르게 나눈 장면으로 뽑았습니다. (' + (e && e.message || e) + ')'; const stp = r.cands.length / st.count; times = Array.from({ length: Math.min(st.count, r.cands.length) }, (_, i) => r.cands[Math.floor((i + 0.5) * stp)].time); } // 분석이 안 돼도 캡쳐는 끝낸다
+      catch (e) { note = (note ? note + '\n' : '') + '얼굴을 보고 고르지 못해 고르게 나눈 장면으로 뽑았습니다. (' + (e && e.message || e) + ')'; const c0 = r.cands.filter(c => c.time < CAM_OFF), stp = c0.length / st.count; times = Array.from({ length: Math.min(st.count, c0.length) }, (_, i) => c0[Math.floor((i + 0.5) * stp)].time); } // 카메라가 여럿이면 첫 카메라(위쪽) 장면만 // 분석이 안 돼도 캡쳐는 끝낸다
       st.phase = '고른 장면을 저장하는 중'; r = await api.finish(times);
     }
   } catch (e) { r = { error: String(e && e.message || e) }; }

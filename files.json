@@ -2,7 +2,7 @@
  {
   "path": "hub.html",
   "size": 79557,
-  "sha256": "b7b52937bbd43475910ac8d4469d89bb31b9dd6febf620389499fb814f7259c3"
+  "sha256": "9cb767bc620131e9a1031adf9b3b5e65432e6bb4002852984507efae5c338f81"
  },
  {
   "path": "pages/cut.html",
@@ -66,8 +66,8 @@
  },
  {
   "path": "pages/thumb.html",
-  "size": 223171,
-  "sha256": "eeec63fae53ecbd84f686af137ebf870022ee2d36c7100e0abdba338f76a7ed9"
+  "size": 224120,
+  "sha256": "c56d4b422a6ff0d386ada651a569202f4bf5182e091e8097e6c6265550a543ec"
  },
  {
   "path": "pages/usage.html",
@@ -91,8 +91,8 @@
  },
  {
   "path": "thumb/thumb.jsx",
-  "size": 11545,
-  "sha256": "d6225663e444177d966151f8a93b7cb6f2f8f2e06fb1abeada6b2fe7ca319a6a"
+  "size": 13823,
+  "sha256": "3310962bbf18aa810c429286275300ccbcbb83c8bde711f39ac7201d3a002f8d"
  },
  {
   "path": "thumb/tiff16.epr",
@@ -107,6 +107,6 @@
  {
   "path": "version.json",
   "size": 73,
-  "sha256": "951f58249a752525f570ec2da0d9886faa4a1c3e8007153eb2bf632c58dc8726"
+  "sha256": "6a362e28431f3baeea8233502a8f0c4a745a96e9bb95bd8c01a4aefd7cfd39a2"
  }
 ]
