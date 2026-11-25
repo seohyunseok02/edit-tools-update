@@ -113,6 +113,7 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
       <div class="drop" id="dropT" tabindex="0" role="button"><b>미드폼 디자인 템플릿</b><span id="nameT">이 업체의 템플릿 .prproj 를 넣으세요</span></div>
       <div class="drop" id="dropL" tabindex="0" role="button"><b>스타일 배우기 (선택)</b><span id="nameL">이 업체의 완성 프로젝트 .prproj 를 2~3개 넣으세요</span></div>
     </div>
+    <div class="row"><label for="styleMode">스타일 배우기에 넣을 때</label><select id="styleMode"><option value="add">기존 것에 더하기 (최근 5편 유지)</option><option value="new">새로 배우기 (기존 것 비우고 넣은 것만)</option></select></div>
     <input type="file" id="fileT" accept=".prproj" hidden><input type="file" id="fileL" accept=".prproj" multiple hidden>
     <div class="kv" id="clientInfo" hidden></div>
     <div class="note" id="learnNote" hidden></div>
@@ -2220,10 +2221,13 @@ function renderClient() {
   }
   if (c.style) {
     const s = c.style, u = Object.entries(s.usage).sort((a, b) => b[1] - a[1]);
-    const names = Object.keys(c.parts || {}), clr = el('button', { id: 'btnForget', text: '배운 스타일 지우기' }); clr.onclick = async () => { delete c.style; delete c.parts; await saveClient(); renderClient(); };
-    box.append(el('div', { text: `이 업체의 스타일: 1분에 ${s.perMin}개 · 평균 ${s.avgDur}초 · 예시 ${s.examples.length}개 · 완성 프로젝트 ${s.projects}개에서 배움` }), el('div', { class: 'note', text: (names.length ? '배운 프로젝트: ' + names.join(', ') + ' · ' : '') + (s.projects < 3 ? '3~5개를 넣으면 어디에 넣고 어디에 안 넣는지를 더 잘 따라 합니다. 더 넣으면 기존 것에 더해집니다.' : '더 넣으면 기존 것에 더해집니다.') }), el('div', { class: 'actions' }, clr), el('div', { class: 'usage' }, ...u.slice(0, 14).map(([k, v]) => el('span', { class: 'tag', text: `${k} ${v}` }))));
+    const clr = el('button', { id: 'btnForget', text: '배운 스타일 모두 지우기' }); clr.onclick = async () => { snapStyle(c); delete c.style; delete c.parts; await saveClient(); renderClient(); };
+    box.append(el('div', { text: `이 업체의 스타일: 1분에 ${s.perMin}개 · 평균 ${s.avgDur}초 · 예시 ${s.examples.length}개 · 완성 프로젝트 ${s.projects}개에서 배움` }),
+      el('div', { class: 'note', text: `최근 ${STYLE_KEEP}편만 씁니다(📌 고정한 것은 늘 남김). 더 넣으면 가장 오래된 것이 빠집니다. 편집기가 만든 효과자막을 프리미어에서 고쳐 저장하면 그 완성본도 자동으로 여기에 들어갑니다.` + (s.projects < 3 ? ' 3~5편이 있으면 어디에 넣고 안 넣는지를 더 잘 따라 합니다.' : '') }));
+    renderParts(box, c);
+    box.append(el('div', { class: 'actions' }, clr, (c.styleHist || []).length ? el('button', { id: 'btnUndoStyle', text: `이전 학습으로 되돌리기 (${ymd(c.styleHist.at(-1).at)})`, onclick: () => undoStyle(c) }) : null), el('div', { class: 'usage' }, ...u.slice(0, 14).map(([k, v]) => el('span', { class: 'tag', text: `${k} ${v}` }))));
     $('perMin').value = s.perMin || 6;
-  } else if (st.cat && !c.borrow) box.append(el('div', { class: 'note', text: '스타일을 배우지 않은 상태입니다. 디자인 이름(예: 부정/금지, 행복/기쁨)만 보고 고릅니다.' }));
+  } else if (st.cat && !c.borrow) { box.append(el('div', { class: 'note', text: '스타일을 배우지 않은 상태입니다. 디자인 이름(예: 부정/금지, 행복/기쁨)만 보고 고릅니다.' })); if ((c.styleHist || []).length) box.append(el('div', { class: 'actions' }, el('button', { id: 'btnUndoStyle', text: `이전 학습으로 되돌리기 (${ymd(c.styleHist.at(-1).at)})`, onclick: () => undoStyle(c) }))); }
   if (st.cat) renderBorrow(box, c);
   const es = effStyle(c); if (es && es.perMin) $('perMin').value = es.perMin;
 }
@@ -2246,9 +2250,30 @@ hookDrop('dropL', 'fileL', async files => {
   show('err1', ''); if (!st.cat) return show('err1', '먼저 이 업체의 템플릿을 넣어 주세요. 디자인 이름을 알아야 스타일을 읽을 수 있습니다.');
   $('nameL').textContent = '읽는 중…'; await new Promise(r => setTimeout(r, 30)); const parts = [], bad = [];
   for (const f of files) { try { const P = await E.Proj.fromBytes(new Uint8Array(await f.arrayBuffer()), f.name), s = E.learnStyle(P, st.cat); s.file = f.name; if (s.count) parts.push(s); else bad.push(f.name + ' (이 템플릿의 효과자막을 찾지 못함)'); } catch (er) { bad.push(f.name + ' (' + er.message + ')'); } }
-  if (parts.length) { const c = st.clients[st.cur]; c.parts = c.parts || {}; parts.forEach(p => { c.parts[p.file] = p; }); c.style = E.mergeStyles(Object.values(c.parts)); await saveClient(); }
+  if (parts.length) { const c = st.clients[st.cur], fresh = $('styleMode') && $('styleMode').value === 'new'; snapStyle(c); if (fresh) c.parts = {}; addParts(c, parts); await saveClient(); }
   renderClient(); if (bad.length) show('err1', '읽지 못한 파일: ' + bad.join(', '));
 });
+/* ---------- 배운 스타일 관리: 최근 STYLE_KEEP편만 쓰고(고정한 것은 늘 남김), 바꿀 때마다 직전 상태를 5개까지 보관 ----------
+   parts[파일이름] = learnStyle 결과 + addedAt(배운 때) · pinned(고정) · auto(사람이 고친 완성본에서 자동으로 배움). styleHist 는 이 PC에만 둔다(공유 안 함) */
+const STYLE_KEEP = 5;
+function snapStyle(c) { if (!c.parts || !Object.keys(c.parts).length) return; c.styleHist = (c.styleHist || []).concat([{ at: Date.now(), parts: JSON.parse(JSON.stringify(c.parts)) }]).slice(-5); }
+function restyle(c) { const v = Object.values(c.parts || {}); if (v.length) c.style = E.mergeStyles(v); else { delete c.style; delete c.parts; } }
+function addParts(c, parts) {
+  c.parts = c.parts || {}; const now = Date.now(); parts.forEach((p, i) => { const old = c.parts[p.file]; c.parts[p.file] = Object.assign(p, { addedAt: p.addedAt || now + i, pinned: !!(old && old.pinned) }); });
+  const free = Object.entries(c.parts).filter(([, p]) => !p.pinned).sort((a, b) => (b[1].addedAt || 0) - (a[1].addedAt || 0)); for (const [k] of free.slice(STYLE_KEEP)) delete c.parts[k]; // 오래된 것부터 빠진다
+  restyle(c);
+}
+const ymd = t => t ? new Date(t).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '예전';
+function renderParts(box, c) {
+  const names = Object.keys(c.parts || {}).sort((a, b) => (c.parts[b].addedAt || 0) - (c.parts[a].addedAt || 0)); if (!names.length) return;
+  const list = el('div', { class: 'parts' });
+  for (const n of names) { const p = c.parts[n];
+    const pin = el('button', { text: p.pinned ? '📌 고정됨' : '📌 고정', title: p.pinned ? '누르면 고정을 풉니다(최근 5편에서 밀리면 빠짐)' : '누르면 최근 5편에서 밀려도 빠지지 않습니다' }); pin.onclick = async () => { snapStyle(c); p.pinned = !p.pinned; await saveClient(); renderClient(); };
+    const rm = el('button', { text: '빼기' }); rm.onclick = async () => { snapStyle(c); delete c.parts[n]; restyle(c); await saveClient(); renderClient(); };
+    list.append(el('div', { class: 'row' }, el('span', { text: `${ymd(p.addedAt)} · ${n}${p.auto ? ' (사람이 고친 완성본에서 자동)' : ''} · 효과자막 ${p.count || 0}개` }), pin, rm)); }
+  box.append(list);
+}
+async function undoStyle(c) { const h = (c.styleHist || []).pop(); if (!h) return; c.parts = h.parts; restyle(c); await saveClient(); renderClient(); }
 $('btnExport').onclick = async () => {
   const c = st.clients[st.cur]; if (!c) return show('err1', '내보낼 업체가 없습니다.');
   const data = JSON.stringify({ kind: 'fx-client', name: c.name, tplName: c.tplName, tplDate: c.tplDate, tpl: c.tplBytes ? b64(c.tplBytes) : '', style: c.style || null, parts: c.parts || null, borrow: c.borrow || null, off: c.off || null }), fn = `효과자막설정_${c.name}.json`;
@@ -2617,6 +2642,8 @@ async function learnFromEdits() {
       const cat = E.analyzeTemplate(await E.Proj.fromBytes(c.tplBytes, c.tplName));
       const a = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), cat).examples, b = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), cat).examples;
       const items = fxDiff(a, b); if (!items) continue;
+      // 사람이 고친 완성본 자체도 스타일 배우기에 넣는다(최근 5편 유지 → 저절로 최신화). 같은 파일은 새 것으로 바뀐다
+      try { const s = E.learnStyle(await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), cat); if (s.count) { s.file = p.name; s.auto = true; s.addedAt = p.mtime || Date.now(); snapStyle(c); addParts(c, [s]); c.savedAt = Date.now(); await DB.put(c); shareClient(c); } } catch (e) {}
       const touched = new Set(items.filter(x => x.kind === 'design' || x.kind === 'text').map(x => x.said + '|' + (x.now != null ? x.now : x.text))).size, /* 문구와 디자인을 둘 다 고친 효과자막은 한 번만 센다 */ removed = items.filter(x => x.kind === 'removed').length;
       items.push({ kind: 'summary', project: p.name, client: p.client, gen: a.length, final: b.length, kept: Math.max(0, a.length - removed - touched), removed, changed: touched, added: items.filter(x => x.kind === 'added').length, rule: (p.meta && p.meta.rule) || null, editor: (() => { try { return window.parent.__me || ''; } catch { return ''; } })() }); // 학습 현황판용 (rule = 만들 때의 규칙 방식, editor = 배울 때 로그인한 사람)
       await LA.put({ tool: 'fx', client: clientKey(p.client), rec: p.id, mtime: p.mtime, items }); n += items.length - 1;
