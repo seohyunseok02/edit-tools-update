@@ -47,6 +47,10 @@ textarea{width:100%;min-height:110px;font:12px/1.5 var(--mono)}
 .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .note{color:var(--mute);font-size:13px;margin:0}
 .msg{border-radius:7px;padding:8px 12px;background:var(--warn-soft);color:var(--warn);font-size:13px;white-space:pre-wrap}
+#noteBox textarea{min-height:56px;font:13px/1.5 var(--font)}
+.sp{display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:start;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.sp .what{font-weight:600}
+.sp .said{color:var(--mute);font-size:13px}
 .kv{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
 .kv .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .kv .row label{min-width:70px;font-size:13px}
@@ -124,7 +128,20 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
       <label class="note"><input type="checkbox" id="gptKeep"> 이 컴퓨터에 키 기억하기</label>
       <p class="note" id="gptNote">OmniRoute(이 PC)를 거쳐 ChatGPT 구독으로 판단을 받습니다. 받아쓰기 글자와 대본만 보내고 영상·음성은 보내지 않습니다.</p>
     </div>
+    <div id="noteBox" class="kv">
+      <h3>특이사항 <small>적어 두면 GPT가 해당 구간을 찾아 옮기기·무조건 살리기·빼기로 바꿉니다. 적용 전에 아래에서 확인합니다.</small></h3>
+      <label class="note" for="noteProj">이번 영상만</label>
+      <textarea id="noteProj" rows="3" placeholder="예) 인트로를 마지막에 찍었어. 맨 앞으로 옮겨 줘&#10;예) 콜라겐 부작용 설명하는 부분은 무조건 살려&#10;예) 중간에 휴대폰 울린 부분은 빼"></textarea>
+      <label class="note" for="noteClient">이 업체 고정 메모 <span id="noteClientWho"></span></label>
+      <textarea id="noteClient" rows="2" placeholder="이 업체 영상마다 매번 들어갈 지시 (업체를 고르면 저절로 채워집니다)"></textarea>
+    </div>
     <div class="actions"><button class="pri" id="btnAnalyze">분석하기</button><span class="note" id="findState"></span></div>
+    <div id="specBox" class="kv" hidden>
+      <h3>특이사항 확인 <small>GPT가 찾은 구간입니다. ▶ 로 들어 보고, 맞는 것만 체크한 채 <b>이대로 적용</b>을 누르세요.</small></h3>
+      <div id="specList" class="list"></div>
+      <p class="msg" id="specMiss" hidden></p>
+      <div class="actions"><button class="pri" id="btnSpecApply">이대로 적용</button><span class="note" id="specState"></span></div>
+    </div>
     <div id="manual" class="manual" hidden>
       <h3>AI에게 물어보기 — 컷편집 판단</h3>
       <ol class="steps">
@@ -1415,8 +1432,9 @@ function gptSetup(doc) {
    keep = [{t0,t1}] (원본 시퀀스 틱, 시간 순서). 클립의 이펙트·볼륨은 복제본에 그대로 따라간다. 원래 클립은 트랙에서 빼기만 한다(파일에는 남음). */
 function buildCut(P, seq, keep) {
   const fr = seq.frame, snap = t => Math.round(t / fr) * fr, segs = []; let cur = 0;
-  for (const r of keep) { const a = snap(Math.min(r.t0, r.t1)), b = snap(Math.max(r.t0, r.t1)); if (b - a < fr) continue; if (segs.length && a < segs[segs.length - 1].b) throw new Error('남길 구간이 겹치거나 순서가 뒤바뀌었습니다'); segs.push({ a, b, d: cur, len: b - a }); cur += b - a; }
+  for (const r of keep) { const a = snap(Math.min(r.t0, r.t1)), b = snap(Math.max(r.t0, r.t1)); if (b - a < fr) continue; segs.push({ a, b, d: cur, len: b - a }); cur += b - a; } // keep 순서 = 편집본 순서 (특이사항으로 구간을 옮기면 원본 순서와 다르다)
   if (!segs.length) throw new Error('남길 구간이 없습니다');
+  { const s = segs.slice().sort((x, y) => x.a - y.a); for (let k = 1; k < s.length; k++) if (s[k].a < s[k - 1].b) throw new Error('남길 구간이 겹칩니다'); }
   const tracks = seq.vtracks.map(t => ({ t, audio: false })).concat(seq.atracks.map(t => ({ t, audio: true }))), log = []; let nV = 0, nA = 0;
   for (const { t, audio } of tracks) {
     if (chs(ch(t, 'ClipTrack', 'TransitionItems', 'TrackItems'), 'TrackItem').length) log.push('트랜지션이 있는 트랙은 트랜지션을 빼고 잘랐습니다. 필요하면 다시 넣어 주세요.');
@@ -1502,8 +1520,8 @@ function cutRules(units) {
 }
 /* 컷편집 비교(학습용): 편집기가 만든 컷편집 A 와 사람이 고친 B 를 원본 소리(받아쓰기 있는 목소리 트랙의 원본 파일 시간)로 맞춰
    사람이 더 지운 말(removed)·되살린 말(restored)·남긴 말 앞뒤로 늘린 여유(pre/post, 초)를 낸다 */
-function cutCompare(A, B) {
-  const T = TICKS;
+function cutCompare(A, B, skip) { // skip: [{m: 원본 파일 이름, a, b}] 특이사항으로 사람이 정한 구간(원본 파일 시간) — 학습에서 뺀다
+  const T = TICKS, skipOf = m => (skip || []).filter(x => x && x.m === m), hit = (sk, s) => sk.some(x => s[1] > x.a && s[0] < x.b);
   function kept(P) {
     const seq = analyzeMid(P).seq, vs = cutVoices(P, seq); if (!vs.length) return null; const tr = seq.atracks[vs[0].track], by = {}, words = new Map();
     for (const node of P.items(tr)) { const c = P.info(node), cl = P.clipEl(node).clip, outN = cl && cl.getElementsByTagName('OutPoint')[0]; let rate = outN && c.end > c.start ? (+outN.textContent - c.inPoint) / (c.end - c.start) : 1; if (!(rate > 0.05 && rate < 20)) rate = 1;
@@ -1515,26 +1533,27 @@ function cutCompare(A, B) {
   const G = kept(A), F = kept(B); if (!G || !F) return null;
   const res = { gen: G.dur, fin: F.dur, removed: [], restored: [], pre: [], post: [] };
   for (const m of new Set(Object.keys(G.by).concat(Object.keys(F.by)))) {
-    const g = G.by[m] || [], f = F.by[m] || [], ws = F.words.get(m) || G.words.get(m) || [], inside = ([a, b]) => ws.filter(x => (Math.min(b, x.t + x.d) - Math.max(a, x.t)) > x.d * 0.5);
-    for (const s of minus(f, g)) { const len = (s[1] - s[0]) / T; if (len < 0.15) continue; const wi = inside(s); res.restored.push({ len: +len.toFixed(2), words: wi.length, text: wi.map(x => x.w).join(' '), edge: g.some(([a, b]) => Math.abs(a - s[1]) < T * 0.05 || Math.abs(b - s[0]) < T * 0.05) }); }
-    for (const s of minus(g, f)) { const len = (s[1] - s[0]) / T; if (len < 0.15) continue; const wi = inside(s); res.removed.push({ len: +len.toFixed(2), words: wi.length, text: wi.map(x => x.w).join(' ') }); }
-    for (const [a, b] of f) for (const [c, d] of g) { if (d <= a || c >= b) continue; if (a < c) res.pre.push(+((c - a) / T).toFixed(2)); if (b > d) res.post.push(+((b - d) / T).toFixed(2)); }
+    const g = G.by[m] || [], f = F.by[m] || [], ws = F.words.get(m) || G.words.get(m) || [], inside = ([a, b]) => ws.filter(x => (Math.min(b, x.t + x.d) - Math.max(a, x.t)) > x.d * 0.5), sk = skipOf(m);
+    if (sk.length) res.skipped = (res.skipped || 0) + minus(f, g).concat(minus(g, f)).filter(s => hit(sk, s) && (s[1] - s[0]) / T >= 0.15).length;
+    for (const s of minus(f, g)) { const len = (s[1] - s[0]) / T; if (len < 0.15 || hit(sk, s)) continue; const wi = inside(s); res.restored.push({ len: +len.toFixed(2), words: wi.length, text: wi.map(x => x.w).join(' '), edge: g.some(([a, b]) => Math.abs(a - s[1]) < T * 0.05 || Math.abs(b - s[0]) < T * 0.05) }); }
+    for (const s of minus(g, f)) { const len = (s[1] - s[0]) / T; if (len < 0.15 || hit(sk, s)) continue; const wi = inside(s); res.removed.push({ len: +len.toFixed(2), words: wi.length, text: wi.map(x => x.w).join(' ') }); }
+    for (const [a, b] of f) for (const [c, d] of g) { if (d <= a || c >= b || hit(sk, [a, b])) continue; if (a < c) res.pre.push(+((c - a) / T).toFixed(2)); if (b > d) res.post.push(+((b - d) / T).toFixed(2)); }
   }
   return res;
 }
 /* 남길 구간 만들기. 남긴 단위의 단어(군더더기 제외)를 이어, maxGap보다 긴 공백만 pre+post 만큼으로 줄인다 */
 function cutKeep(units, strength, end) {
   const o = typeof strength === 'object' ? strength : CUT_STRENGTH[strength] || CUT_STRENGTH.normal, pre = o.pre * TICKS, post = o.post * TICKS, maxGap = o.maxGap * TICKS;
-  const ws = []; for (const u of units) if (u.d !== 'drop') for (const w of u.words) if (!w.filler || u.d === 'review') ws.push(Object.assign({ q: u.q && w === u.words[u.words.length - 1] }, w));
+  const ws = []; for (const u of units) if (u.d !== 'drop') for (const w of u.words) if (!w.filler || u.d === 'review' || u.protect) ws.push(Object.assign({ q: u.q && w === u.words[u.words.length - 1], grp: u.grp || 0, protect: !!u.protect }, w)); // grp: 특이사항으로 옮길 묶음(다른 묶음과 한 구간으로 합치지 않는다), protect: 무조건 살림(군더더기·말더듬도 그대로)
   // 말더듬: 바로 붙어 같은 낱말을 두 번 말하면("그래서 그래서", "보통 보통") 앞의 것을 뺀다 (사람이 손으로 지우던 것)
   const wn = w => String(w.w || '').replace(/[\s.,!?~…"'“”]/g, '');
-  for (let k = ws.length - 2; k >= 0; k--) { const a = ws[k], b = ws[k + 1]; if (!a.q && wn(a).length >= 2 && wn(a) === wn(b) && b.t - a.e < 0.6 * TICKS) { b.cutFrom = Math.max(a.e, b.cutFrom || 0); b.cutTo = Math.min(a.t, b.cutTo || Infinity); ws.splice(k, 1); } } // cutTo~cutFrom = 뺀 낱말 자리
+  for (let k = ws.length - 2; k >= 0; k--) { const a = ws[k], b = ws[k + 1]; if (!a.q && !a.protect && !b.protect && wn(a).length >= 2 && wn(a) === wn(b) && b.t - a.e < 0.6 * TICKS) { b.cutFrom = Math.max(a.e, b.cutFrom || 0); b.cutTo = Math.min(a.t, b.cutTo || Infinity); ws.splice(k, 1); } } // cutTo~cutFrom = 뺀 낱말 자리
   const out = []; let cur = null;
   ws.forEach((w, k) => {
     const prev = ws[k - 1], gap = prev ? w.t - prev.e : Infinity, tail = prev && prev.q ? Math.max(post, o.qa * TICKS - pre) : post;
-    if (cur && !w.cutFrom && (gap <= maxGap || gap <= tail + pre)) { cur.t1 = Math.max(cur.t1, w.e + post); cur.wb = w.e; return; } // 자연스러운 짧은 간격은 그대로
+    if (cur && !w.cutFrom && (w.grp === prev.grp) && (gap <= maxGap || gap <= tail + pre)) { cur.t1 = Math.max(cur.t1, w.e + post); cur.wb = w.e; return; } // 자연스러운 짧은 간격은 그대로
     if (cur) cur.t1 = w.cutFrom ? Math.max(prev.e, Math.min(prev.e + tail, w.cutTo)) : prev.e + tail; // 긴 공백(또는 뺀 말)은 앞 말 뒤 여유 + 뒷말 앞 여유만 남긴다. 말더듬은 뺀 낱말 앞에서 끊는다
-    cur = { t0: Math.max(0, w.cutFrom || 0, w.t - pre, cur ? cur.t1 : 0), t1: w.e + post, wa: w.t, wb: w.e }; out.push(cur); // wa/wb = 첫 말 시작·끝 말 끝 (경계 조정의 기준). 말더듬은 뺀 낱말 끝(cutFrom)부터
+    cur = { t0: Math.max(0, w.cutFrom || 0, w.t - pre, cur ? cur.t1 : 0), t1: w.e + post, wa: w.t, wb: w.e, grp: w.grp }; out.push(cur); // wa/wb = 첫 말 시작·끝 말 끝 (경계 조정의 기준). 말더듬은 뺀 낱말 끝(cutFrom)부터
   });
   if (cur) cur.t1 = Math.min(end || Infinity, cur.t1);
   return out.filter(r => r.t1 - r.t0 > 0.05 * TICKS);
@@ -2053,7 +2072,7 @@ if (typeof window !== 'undefined') window.Engine = Engine;
 <script>
 'use strict';
 const E = window.Engine, T = E.TICKS, $ = id => document.getElementById(id);
-const st = { P: null, bytes: null, name: '', seq: null, voices: [], voice: null, end: 0, script: '', scriptName: '', units: [], keep: [], bounds: [], adj: {}, heard: {}, ai: null, prompt: '', built: null };
+const st = { P: null, bytes: null, name: '', seq: null, voices: [], voice: null, end: 0, script: '', scriptName: '', units: [], keep: [], bounds: [], adj: {}, heard: {}, ai: null, prompt: '', built: null, special: [], specPending: false, moves: [] };
 const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const k in attrs || {}) { if (k === 'class') e.className = attrs[k]; else if (k === 'text') e.textContent = attrs[k]; else if (k.startsWith('on')) e[k] = attrs[k]; else e.setAttribute(k, attrs[k]); } for (const k of kids) if (k != null) e.append(k); return e; };
 const tc = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const show = (id, msg) => { const e = $(id); e.hidden = !msg; e.textContent = msg || ''; };
@@ -2076,6 +2095,7 @@ hookDrop('dropP', 'fileP', async file => {
     Object.assign(st, { P, bytes, name: file.name, units: [], keep: [], bounds: [], adj: {}, heard: {}, built: null });
     const sel = $('seqSel'); sel.textContent = ''; seqs.forEach((s, i) => sel.append(el('option', { value: i, text: s.name }))); st.seqs = seqs;
     $('nameP').textContent = file.name; $('dropP').classList.add('ok'); $('pickRow').hidden = false; $('outName').value = outName(file.name);
+    Object.assign(st, { special: [], specPending: false, moves: [] }); loadNotes();
     pickSeq(0);
   } catch (er) { st.P = null; $('nameP').textContent = '다시 넣어 주세요'; $('dropP').classList.remove('ok'); $('info').textContent = ''; show('err1', er.message); }
   refresh();
@@ -2117,9 +2137,10 @@ async function learnCutEdits() {
   const LA = learnApi(); if (!LA) return 0; let n = 0;
   for (const p of await LA.pending('cut').catch(() => [])) {
     try {
-      const r = E.cutCompare(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), await E.Proj.fromBytes(new Uint8Array(p.cur), p.name)); if (!r) continue;
+      const skip = p.meta && Array.isArray(p.meta.special) && p.meta.special.length ? p.meta.special : null; // 특이사항으로 정한 구간은 그 영상만의 사정이라 배우지 않는다
+      const r = E.cutCompare(await E.Proj.fromBytes(new Uint8Array(p.gen), 'made.prproj'), await E.Proj.fromBytes(new Uint8Array(p.cur), p.name), skip); if (!r) continue;
       const items = r.removed.filter(x => x.words).map(x => ({ kind: 'removed', text: x.text, len: x.len })).concat(r.restored.filter(x => x.words).map(x => ({ kind: 'restored', text: x.text, len: x.len, edge: x.edge })));
-      items.push({ kind: 'summary', project: p.name, client: p.client, gen: Math.round(r.gen), final: Math.round(r.fin), removedSec: +r.removed.reduce((s, x) => s + x.len, 0).toFixed(1), removedN: r.removed.filter(x => x.words).length, restoredN: r.restored.filter(x => x.words).length, widenN: r.restored.filter(x => !x.words).length, pre: median(r.pre), post: median(r.post), editor: (() => { try { return window.parent.__me || ''; } catch { return ''; } })() });
+      items.push({ kind: 'summary', project: p.name, client: p.client, gen: Math.round(r.gen), final: Math.round(r.fin), removedSec: +r.removed.reduce((s, x) => s + x.len, 0).toFixed(1), removedN: r.removed.filter(x => x.words).length, restoredN: r.restored.filter(x => x.words).length, widenN: r.restored.filter(x => !x.words).length, pre: median(r.pre), post: median(r.post), special: skip ? skip.length : 0, skipped: r.skipped || 0, editor: (() => { try { return window.parent.__me || ''; } catch { return ''; } })() });
       await LA.put({ tool: 'cut', client: cutKey(p.client), rec: p.id, mtime: p.mtime, items }); n++;
     } catch (e) {}
   }
@@ -2139,6 +2160,90 @@ function strengthWithLearned() {
   return o;
 }
 
+/* ---------- 특이사항: 사람이 적은 지시 → GPT가 구간을 찾음(special) → 확인 → 옮기기·살리기·빼기 적용 ----------
+   적용한 구간은 저장할 때 원본 파일 시간으로 남겨, 나중에 사람이 고친 것과 비교할 때 학습에서 뺀다(그 영상만의 사정이므로) */
+const SPEC_ACT = { front: '맨 앞으로 옮기기', after: '뒤로 옮기기', keep: '무조건 살리기', drop: '빼기' };
+const noteKey = () => 'cut-note-' + st.name;
+async function loadNotes() {
+  const p = store.get(noteKey()); $('noteProj').value = p && p.text || '';
+  const c = cutKey(cutClientOf(st.name)); $('noteClientWho').textContent = st.name ? '(' + cutClientOf(st.name) + ')' : ''; $('noteClient').value = (store.get('cut-cnote-' + c) || {}).text || '';
+  const LA = learnApi(); if (!LA || !st.name) return;
+  try { const x = ((await LA.load({ tool: 'cutnote', client: c })).items || []).filter(i => i && i.kind === 'memo').sort((a, b) => (b.ts || 0) - (a.ts || 0))[0]; const mine = store.get('cut-cnote-' + c); if (x && (!mine || (mine.ts || 0) < x.ts)) { $('noteClient').value = x.text || ''; store.set('cut-cnote-' + c, { text: x.text || '', ts: x.ts }); } } catch (e) {}
+}
+$('noteProj').addEventListener('change', () => { if (st.name) store.set(noteKey(), { text: $('noteProj').value, ts: Date.now() }); });
+$('noteClient').addEventListener('change', async () => {
+  if (!st.name) return; const c = cutKey(cutClientOf(st.name)), o = { text: $('noteClient').value.trim(), ts: Date.now() }; store.set('cut-cnote-' + c, o);
+  const LA = learnApi(); if (LA) { try { await LA.put({ tool: 'cutnote', client: c, rec: 'memo', items: [{ kind: 'memo', text: o.text, ts: o.ts }] }); } catch (e) {} } // 같은 업체를 쓰는 다른 PC도 받는다
+});
+const notesText = () => ({ proj: $('noteProj').value.trim(), client: $('noteClient').value.trim() });
+function notesPrompt() {
+  const N = notesText(); if (!N.proj && !N.client) return '';
+  return `
+[편집자 특이사항] 사람이 직접 적은 지시다. 위의 다른 기준보다 먼저 따르라.
+${N.proj ? '이번 영상: ' + N.proj : ''}
+${N.client ? '이 업체 공통: ' + N.client : ''}
+특이사항이 구간의 순서나 남김·뺌에 관한 것이면, [발화]에서 그 구간을 찾아 special 에 적어라 (말 내용과 시간을 보고 정확한 시작·끝 발화 번호를 골라라).
+- "act":"front" — 그 구간을 영상 맨 앞으로 옮긴다 (예: 마지막에 찍은 인트로)
+- "act":"after", "after":번호 — 그 구간을 그 번호 발화 바로 뒤로 옮긴다 (예: 촬영 순서와 영상 순서가 다를 때)
+- "act":"keep" — 그 구간은 무조건 남긴다 (drop·trim 에 넣지 마라)
+- "act":"drop" — 그 구간은 뺀다
+구간을 찾지 못한 특이사항은 special_missing 에 그 문장을 적어라. 순서·남김과 관계없는 정보(촬영 상황 설명 등)는 판단에만 참고하라.
+답의 JSON 에 "special":[{"act":"front","i":[시작,끝],"why":"어느 특이사항 때문인지"}], "special_missing":["…"] 를 함께 넣어라.
+`;
+}
+function readSpecial(j) { // GPT 답의 special → [{act, a, b, after, why, on}] (발화 번호 a~b)
+  const n = st.units.length, out = [];
+  for (const x of Array.isArray(j.special) ? j.special : []) {
+    const act = String(x && x.act || ''); if (!SPEC_ACT[act]) continue; const v = Array.isArray(x.i) ? x.i : [x.i, x.i];
+    let a = Math.round(+v[0]), b = Math.round(+v[v.length - 1]); if (!(a >= 0 && b >= 0)) continue; if (a > b) [a, b] = [b, a]; a = Math.min(a, n - 1); b = Math.min(b, n - 1);
+    const after = act === 'after' ? Math.round(+x.after) : null; if (act === 'after' && !(after >= 0 && after < n && (after < a || after > b))) continue;
+    out.push({ act, a, b, after, why: String(x.why || '').trim(), on: true });
+  }
+  return out;
+}
+function unitsText(a, b) { const t = st.units.slice(a, b + 1).map(u => u.text).join(' '); return t.length > 90 ? t.slice(0, 44) + ' … ' + t.slice(-40) : t; }
+function renderSpecial() {
+  const box = $('specList'); box.textContent = ''; const miss = st.ai && st.ai.specMiss && st.ai.specMiss.length ? st.ai.specMiss : [];
+  $('specBox').hidden = !st.units.length || (!st.special.length && !miss.length);
+  st.special.forEach((x, k) => {
+    const cb = el('input', { type: 'checkbox', 'aria-label': (k + 1) + '번 특이사항 적용' }); cb.checked = x.on; cb.onchange = () => { x.on = cb.checked; st.specPending = true; refresh(); };
+    const u0 = st.units[x.a], u1 = st.units[x.b], play = el('button', { class: 'sm', text: '▶', title: '이 구간 원본 듣기 (앞 12초)' }); play.onclick = () => playRanges([[u0.t0 - 0.2 * T, Math.min(u1.t1, u0.t0 + 12 * T) + 0.3 * T]]);
+    const where = x.act === 'after' ? ` → ${x.after}번 발화(원본 ${tc(st.units[x.after].t1 / T)}) 뒤로` : x.act === 'front' ? ' → 영상 맨 앞으로' : '';
+    box.append(el('div', { class: 'sp' }, cb, play, el('div', {}, el('div', { class: 'what', text: `${SPEC_ACT[x.act]}: 발화 ${x.a}~${x.b} (원본 ${tc(u0.t0 / T)}~${tc(u1.t1 / T)}, ${Math.round((u1.t1 - u0.t0) / T)}초)${where}` }),
+      el('div', { class: 'said', text: '"' + unitsText(x.a, x.b) + '"' }), x.why ? el('div', { class: 'note', text: '근거: ' + x.why }) : null)));
+  });
+  show('specMiss', miss.length ? '구간을 찾지 못한 특이사항 (직접 확인해 주세요):\n· ' + miss.join('\n· ') : '');
+  $('btnSpecApply').hidden = !st.special.length; $('btnSpecApply').disabled = !st.specPending; $('btnSpecApply').textContent = st.specPending ? '이대로 적용' : '적용됨 ✓';
+  $('specState').textContent = st.specPending ? '적용하기 전에는 컷편집 프로젝트를 만들 수 없습니다.' : st.special.some(x => x.on) ? '적용한 구간은 나중에 학습에서 뺍니다(이 영상만의 사정).' : '';
+}
+function applySpecial() { // 지난 적용을 되돌리고, 체크한 것만 다시 적용
+  for (const u of st.units) { if (u.noteWas) { Object.assign(u, u.noteWas); delete u.noteWas; } delete u.grp; delete u.protect; }
+  st.moves = []; let g = 0;
+  for (const x of st.special) { if (!x.on) continue;
+    for (let i = x.a; i <= x.b; i++) { const u = st.units[i]; if (!u) continue; if (!u.noteWas) u.noteWas = { d: u.d, why: u.why, by: u.by };
+      if (x.act === 'drop') Object.assign(u, { d: 'drop', why: '특이사항: ' + (x.why || '빼기'), by: 'note' });
+      else { Object.assign(u, { d: 'keep', by: 'note', why: '특이사항: ' + (x.why || SPEC_ACT[x.act]) }); if (x.act === 'keep') u.protect = true; } }
+    if (x.act === 'front' || x.act === 'after') { g++; for (let i = x.a; i <= x.b; i++) if (st.units[i]) st.units[i].grp = g; st.moves.push({ grp: g, to: x.act, after: x.after }); }
+  }
+  st.specPending = false; recalc();
+}
+$('btnSpecApply').onclick = () => { applySpecial(); refresh(); };
+/* 옮기기: 시간 순서로 만든 남길 구간에서 옮길 묶음을 빼서 맨 앞 / 정한 발화 뒤에 끼운다 */
+function orderKeep(keep) {
+  if (!st.moves.length) return keep;
+  const out = keep.filter(r => !r.grp), front = [];
+  for (const m of st.moves) { const seg = keep.filter(r => r.grp === m.grp); if (!seg.length) continue;
+    if (m.to === 'front') front.push(...seg); else { const tu = st.units[m.after], end = tu ? tu.t1 : Infinity; let k = out.findIndex(r => r.wa > end); if (k < 0) k = out.length; out.splice(k, 0, ...seg); } }
+  return front.concat(out);
+}
+/* 학습에서 뺄 구간: 적용한 특이사항 발화 범위를 목소리 트랙 원본 파일 시간으로 */
+function specialSkip() {
+  const out = [];
+  for (const x of st.special) { if (!x.on || !st.units[x.a] || !st.units[x.b]) continue; const t0 = st.units[x.a].t0 - 0.5 * T, t1 = st.units[x.b].t1 + 0.5 * T;
+    for (const c of st.voice.clips) { const a = Math.max(t0, c.start), b = Math.min(t1, c.end); if (b <= a || !c.media) continue; out.push({ m: E.baseName(c.media), a: Math.round(c.inPoint + (a - c.start) * c.rate), b: Math.round(c.inPoint + (b - c.start) * c.rate), act: x.act }); } }
+  return out;
+}
+
 /* ---------- 2. 분석 ---------- */
 const keptSec = () => st.keep.reduce((a, r) => a + r.t1 - r.t0, 0) / T;
 function recalc() {
@@ -2146,7 +2251,8 @@ function recalc() {
   const keep = E.cutKeep(st.units, strengthWithLearned(), st.end), f = T / 20;
   for (const r of keep) { r.t0 += (st.adj['s' + Math.round(r.wa / f)] || 0) * T; r.t1 += (st.adj['e' + Math.round(r.wb / f)] || 0) * T; }
   for (let k = 1; k < keep.length; k++) if (keep[k].t0 < keep[k - 1].t1) keep[k].t0 = keep[k - 1].t1; // 늘린 경계가 겹치지 않게
-  st.keep = keep.filter(r => r.t1 - r.t0 > T / 30); st.bounds = E.cutBoundaries(st.units, st.keep); st.built = null;
+  st.keep = orderKeep(keep.filter(r => r.t1 - r.t0 > T / 30)); st.bounds = E.cutBoundaries(st.units, st.keep); st.built = null;
+  for (const b of st.bounds) if (b.b.t0 < b.a.t1) Object.assign(b, { flags: ['특이사항으로 순서를 바꿔 이어 붙인 곳'], removed: [], prio: 5, gapCut: 0 });
 }
 function makePrompt() {
   const maxMin = +$('maxMin').value || 12, U = st.units;
@@ -2173,7 +2279,7 @@ ${st.cutLearn && (st.cutLearn.removed.length || st.cutLearn.restored.length) ? `
 ${st.cutLearn.removed.length ? '사람이 뺀 말:\n' + st.cutLearn.removed.map(t => '- ' + t).join('\n') : ''}
 ${st.cutLearn.restored.length ? '사람이 되살린 말:\n' + st.cutLearn.restored.map(t => '- ' + t).join('\n') : ''}
 ` : ''}
-
+${notesPrompt()}
 아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라. 번호는 [발화]의 번호다. 연속된 여러 발화는 "i":[시작,끝] 으로 묶어도 된다.
 {"drop":[{"i":3,"why":"…"},{"i":[10,12],"why":"…"}],"review":[{"i":20,"why":"…"}],"keep":[{"i":5,"why":"…"}],"trim":[{"i":40,"why":"…"}],"missing":["…"],"note":"분량·구성에 대한 한두 문장"}
 ${st.script ? '\n[대본]\n' + st.script + '\n' : ''}
@@ -2189,12 +2295,14 @@ function applyAi(j) {
   each(j.review, (u, why) => { u.d = 'review'; u.why = why || '확인 필요'; u.by = 'ai'; n++; });
   each(j.keep, (u, why) => { u.d = 'keep'; u.why = why ? '되살림: ' + why : ''; u.by = 'ai'; n++; });
   each(j.trim, (u, why) => { if (u.d !== 'drop') { u.trim = why || '분량 줄이기 후보'; n++; } });
-  if (!n) throw new Error('발화 번호가 들어 있는 판단이 없습니다');
-  st.ai = { note: String(j.note || '').trim(), missing: (Array.isArray(j.missing) ? j.missing : []).map(String).filter(Boolean) };
+  const sp = readSpecial(j);
+  if (!n && !sp.length) throw new Error('발화 번호가 들어 있는 판단이 없습니다');
+  st.ai = { note: String(j.note || '').trim(), missing: (Array.isArray(j.missing) ? j.missing : []).map(String).filter(Boolean), specMiss: (Array.isArray(j.special_missing) ? j.special_missing : []).map(String).filter(Boolean) };
+  st.special = sp; st.specPending = sp.length > 0;
 }
 function analyze() {
   if (!st.voice) throw new Error('받아쓰기가 있는 목소리 트랙이 없습니다.');
-  st.units = E.cutRules(E.cutUnits(st.voice.words)); st.adj = {}; st.heard = {}; st.ai = null; recalc();
+  st.units = E.cutRules(E.cutUnits(st.voice.words)); st.adj = {}; st.heard = {}; st.ai = null; st.special = []; st.specPending = false; st.moves = []; recalc();
 }
 $('btnAnalyze').onclick = async () => {
   show('err2', ''); $('btnAnalyze').disabled = true; $('manual').hidden = true; const md = $('aiMode').value;
@@ -2285,7 +2393,7 @@ $('btnTrim').onclick = () => { for (const u of st.units) if (u.trim && u.d !== '
 
 /* 편집 계획 저장·불러오기 (결정을 바꾼 뒤 다시 만들 때) */
 function download(name, text, type) { const a = el('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name }); document.body.append(a); a.click(); a.remove(); }
-$('btnSavePlan').onclick = () => download($('outName').value.replace(/\.prproj$/i, '') + '_편집계획.json', JSON.stringify({ project: st.name, seq: st.seq.name, voice: st.voice.name, strength: $('strength').value, maxMin: +$('maxMin').value, adj: st.adj, heard: st.heard, ai: st.ai, units: st.units.map(u => ({ i: u.i, t0: u.t0, text: u.text, d: u.d, why: u.why, by: u.by, trim: u.trim || '' })) }, null, 1), 'application/json');
+$('btnSavePlan').onclick = () => download($('outName').value.replace(/\.prproj$/i, '') + '_편집계획.json', JSON.stringify({ project: st.name, seq: st.seq.name, voice: st.voice.name, strength: $('strength').value, maxMin: +$('maxMin').value, adj: st.adj, heard: st.heard, ai: st.ai, special: st.special, notes: notesText(), units: st.units.map(u => ({ i: u.i, t0: u.t0, text: u.text, d: u.d, why: u.why, by: u.by, trim: u.trim || '' })) }, null, 1), 'application/json');
 $('btnLoadPlan').onclick = () => $('filePlan').click();
 $('filePlan').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return; show('err2', '');
@@ -2293,7 +2401,7 @@ $('filePlan').onchange = async e => {
     const p = JSON.parse(await f.text()); if (!st.units.length) analyze();
     let n = 0; for (const x of p.units || []) { const u = st.units[x.i]; if (!u || Math.abs(u.t0 - x.t0) > T / 10 || u.text !== x.text) continue; Object.assign(u, { d: x.d, why: x.why, by: x.by, trim: x.trim }); n++; }
     if (!n) throw new Error('이 프로젝트의 받아쓰기와 맞는 발화가 없습니다. 같은 프로젝트·같은 목소리 트랙인지 확인해 주세요.');
-    if (p.strength) $('strength').value = p.strength; if (p.maxMin) $('maxMin').value = p.maxMin; st.adj = p.adj || {}; st.heard = p.heard || {}; st.ai = p.ai || null; recalc();
+    if (p.strength) $('strength').value = p.strength; if (p.maxMin) $('maxMin').value = p.maxMin; st.adj = p.adj || {}; st.heard = p.heard || {}; st.ai = p.ai || null; st.special = Array.isArray(p.special) ? p.special : []; if (p.notes && p.notes.proj) $('noteProj').value = p.notes.proj; applySpecial();
     if (n < st.units.length) show('err2', `발화 ${st.units.length}개 중 ${n}개의 결정을 불러왔습니다. 나머지는 지금 분석 결과 그대로입니다.`);
   } catch (er) { show('err2', '편집 계획을 불러오지 못했습니다: ' + er.message); }
   refresh();
@@ -2323,9 +2431,9 @@ function renderBounds() {
 $('bView').onchange = () => renderBounds();
 
 /* ---------- 4. 만들기 ---------- */
-async function saveOut(bytes, name) {
+async function saveOut(bytes, name, meta) {
   const LA = learnApi();
-  if (LA && !window.__testSave) { const r = await LA.save({ tool: 'cut', client: cutClientOf(name), name, bytes, base: name.replace(/\.prproj$/i, '') }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다. 프리미어에서 고쳐 저장하면 다음에 이 탭을 열 때 고친 내용을 배웁니다.'; }
+  if (LA && !window.__testSave) { const r = await LA.save({ tool: 'cut', client: cutClientOf(name), name, bytes, base: name.replace(/\.prproj$/i, ''), meta }); return r.canceled ? '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.' : r.path + ' 에 저장했습니다. 프리미어에서 고쳐 저장하면 다음에 이 탭을 열 때 고친 내용을 배웁니다.'; }
   if (window.showSaveFilePicker) { try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Premiere Pro 프로젝트', accept: { 'application/octet-stream': ['.prproj'] } }] }); const w = await h.createWritable(); await w.write(bytes); await w.close(); return name + ' 로 저장했습니다.'; } catch (e) { if (e && e.name === 'AbortError') return '저장을 취소했습니다. 버튼을 다시 누르면 다시 만듭니다.'; } }
   const a = el('a', { href: URL.createObjectURL(new Blob([bytes])), download: name }); document.body.append(a); a.click(); a.remove(); return name + ' 로 받았습니다.';
 }
@@ -2336,7 +2444,7 @@ $('btnBuild').onclick = async () => {
     const r = E.buildCut(P, seq, st.keep); $('buildState').textContent = '파일로 묶는 중…'; await tick();
     let name = $('outName').value.trim() || outName(st.name); if (!/\.prproj$/i.test(name)) name += '.prproj';
     if (name === st.name) throw new Error('원본과 같은 이름으로는 저장하지 않습니다. 파일 이름을 바꿔 주세요.');
-    const out = await P.encode(), msg = await saveOut(out, name); st.built = { r, name, at: new Date(), bytes: out, saved: !/취소/.test(msg) };
+    const out = await P.encode(), msg = await saveOut(out, name, { special: specialSkip(), notes: notesText() }); st.built = { r, name, at: new Date(), bytes: out, saved: !/취소/.test(msg) };
     const n = d => st.units.filter(u => u.d === d).length, maxMin = +$('maxMin').value || 12, sec = r.total / T;
     $('log').textContent = [`원본 ${tc(st.end / T)} → 편집본 ${tc(sec)} (남긴 구간 ${r.segs.length}개, 영상 클립 ${r.video}개, 소리 클립 ${r.audio}개).`,
       `발화 ${st.units.length}개 중 삭제 ${n('drop')}개, 검토로 남김 ${n('review')}개.`,
@@ -2349,7 +2457,7 @@ $('btnBuild').onclick = async () => {
 $('btnRecord').onclick = () => {
   const q = s => '"' + String(s == null ? '' : s).split('"').join('""') + '"', dst = t => { let d = 0; for (const r of st.keep) { if (t >= r.t0 && t < r.t1) return tc((d + t - r.t0) / T); d += r.t1 - r.t0; } return ''; };
   const rows = [['구분', '번호', '원본 시작', '원본 끝', '편집 후 위치', '결정', '판단', '사유', '줄일 후보', '말 / 점검']];
-  for (const u of st.units) rows.push(['발화', u.i, tc(u.t0 / T), tc(u.t1 / T), u.d === 'drop' ? '' : dst(u.t0), { keep: '유지', drop: '삭제', review: '검토(남김)' }[u.d], { rule: '규칙', ai: 'AI', user: '사람' }[u.by] || '', u.why, u.trim || '', u.text]);
+  for (const u of st.units) rows.push(['발화', u.i, tc(u.t0 / T), tc(u.t1 / T), u.d === 'drop' ? '' : dst(u.t0), { keep: '유지', drop: '삭제', review: '검토(남김)' }[u.d], { rule: '규칙', ai: 'AI', user: '사람', note: '특이사항' }[u.by] || '', u.why, u.trim || '', u.text]);
   for (const b of st.bounds) rows.push(['경계', b.k + 1, tc(b.a.t1 / T), tc(b.b.t0 / T), dst(b.b.t0), st.heard[bkey(b)] ? '들어 봄' : '타임코드로만 점검', '', b.flags.join(' · '), '', `잘라냄 ${b.gapCut.toFixed(2)}초 / 남은 간격 ${b.left.toFixed(2)}초`]);
   if (st.ai && st.ai.missing.length) for (const m of st.ai.missing) rows.push(['대본 누락', '', '', '', '', '', 'AI', m, '', '']);
   rows.push(['요약', '', tc(st.end / T), '', tc(keptSec()), '', '', `대본: ${st.scriptName || '없음'} · 강도: ${$('strength').selectedOptions[0].textContent} · 기준 목소리: ${st.voice.name}`, '', st.built ? '프로젝트: ' + st.built.name : '아직 프로젝트를 만들지 않음']);
@@ -2373,7 +2481,7 @@ $('btnNext').onclick = async () => {
 function refresh() {
   const has = !!st.units.length; $('s2').classList.toggle('off', !st.voice); $('s3').classList.toggle('off', !has); $('s4').classList.toggle('off', !has);
   $('s5').classList.toggle('off', !st.built); if (st.built) $('mp3Name').textContent = st.built.name.replace(/_컷편집_\d+차\.prproj$/i, '').replace(/\.prproj$/i, '') + '_mp3.mp3';
-  $('planBox').hidden = !has; $('btnBuild').disabled = !has || !st.keep.length; $('btnRecord').disabled = !has;
+  $('planBox').hidden = !has; $('btnBuild').disabled = !has || !st.keep.length || st.specPending; $('btnRecord').disabled = !has;
   $('btnAnalyze').textContent = has ? '처음부터 다시 분석하기' : $('aiMode').value === 'manual' ? '분석하고 요청문 만들기' : '분석하기';
   if (has) {
     const n = d => st.units.filter(u => u.d === d).length, maxMin = +$('maxMin').value || 12, sec = keptSec(), trims = st.units.filter(u => u.trim && u.d !== 'drop');
@@ -2384,7 +2492,7 @@ function refresh() {
     $('btnTrim').hidden = !trims.length; $('btnTrim').textContent = `줄일 후보 ${trims.length}개 모두 빼기`;
     renderUnits(); renderBounds();
   }
-  renderGuide();
+  renderSpecial(); renderGuide();
 }
 function renderGuide() {
   E.showGuide(() => { const manual = !$('manual').hidden;
