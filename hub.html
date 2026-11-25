@@ -35,7 +35,7 @@ nav button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;ba
 @media (prefers-color-scheme:dark){[data-tone=long]{--t:#7fb0ff;--t-ink:#0a1830;--t-soft:#1d2a40}[data-tone=shorts]{--t:#5fd3a8;--t-ink:#06231a;--t-soft:#15322a}[data-tone=tools]{--t:#b4a3ff;--t-ink:#1b1240;--t-soft:#2a2448}}
 nav h2[data-tone]::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--t);margin-right:6px;vertical-align:1px}
 nav button:hover{background:var(--t-soft,var(--soft))}
-nav button[aria-selected=true]{background:var(--t-bg,var(--t,var(--accent)));color:var(--t-ink,var(--accent-ink));font-weight:700}
+nav button[aria-selected=true]{background:var(--t-bg,var(--t,var(--accent))) border-box;color:var(--t-ink,var(--accent-ink));font-weight:700}
 .tone{display:grid;grid-template-columns:70px auto auto auto 1fr;gap:8px;align-items:center}
 .tone input[type=color]{width:42px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
 .tone input[type=color]:disabled{opacity:.35;cursor:default}
@@ -45,7 +45,7 @@ nav .done{margin-left:auto;font-size:12px;color:var(--ok)}
 nav button[aria-selected=true] .done{color:inherit}
 #right{flex:1;min-width:0;display:flex;flex-direction:column}
 #workbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 14px;background:var(--t-soft,var(--soft));border-bottom:1px solid var(--line);border-left:4px solid var(--t,var(--accent));font-size:14px}
-#workbar .pri{background:var(--t-bg,var(--t,var(--accent)))!important;border-color:transparent!important;color:var(--t-ink,var(--accent-ink))!important}
+#workbar .pri{background:var(--t-bg,var(--t,var(--accent))) border-box!important;border-color:transparent!important;color:var(--t-ink,var(--accent-ink))!important}
 #workbar[hidden]{display:none}
 #workbar select{max-width:420px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--panel)}
 #workbar .pri{background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);border-radius:7px;padding:5px 14px;font-weight:600}
@@ -377,7 +377,7 @@ const toneDecl = t => `--t:${t.a};--t-ink:${t.ink};--t-soft:${t.soft};--t-bg:${t
 function toneStyleText() { const g = ['long', 'shorts', 'tools']; return g.map(x => `[data-tone=${x}]{${toneDecl(tone(x, false))}}`).join('') + '@media (prefers-color-scheme:dark){' + g.map(x => `[data-tone=${x}]{${toneDecl(tone(x, true))}}`).join('') + '}'; }
 const colorCss = id => { const g = toneOf(id), imp = s => s.split(';').map(x => x + ' !important').join(';'), v = (n, t) => `${n};--accent:${t.a};--accent-ink:${t.ink};--accent-soft:${t.soft};--accent-bg:${t.bg}`;
   return `:root{${imp(v(NEUTRAL.light, tone(g, false)))}}@media (prefers-color-scheme:dark){:root{${imp(v(NEUTRAL.dark, tone(g, true)))};color-scheme:dark}}body{background:var(--bg)!important;color:var(--ink)!important}
-button.pri:not(:disabled),.gs.now{background:var(--accent-bg)!important;border-color:transparent!important;color:var(--accent-ink)!important}`; };
+button.pri:not(:disabled),.gs.now{background:var(--accent-bg) border-box!important;border-color:transparent!important;color:var(--accent-ink)!important}`; }; // border-box: 그라데이션이 테두리 자리(양 끝)까지 칠해지게
 function applyTones() { // 허브와 이미 열린 편집기 모두에 바로 적용
   let s = $('toneStyle'); if (!s) { s = document.createElement('style'); s.id = 'toneStyle'; document.head.append(s); } s.textContent = toneStyleText();
   for (const id in frames) try { const el = frames[id].contentDocument.getElementById('hub-common'); if (el) el.textContent = colorCss(id) + COMMON_CSS; } catch {}
@@ -481,7 +481,7 @@ function onFrameLoad(id) {
 }
 
 /* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
-const VER_LABEL = 'ver.1125.49'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1125.51'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});

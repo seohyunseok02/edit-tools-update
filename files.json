@@ -1,8 +1,8 @@
 [
  {
   "path": "hub.html",
-  "size": 68794,
-  "sha256": "53a4bd2ce740c65f3c7744f4d943b5da62c2170a0301d02249e2f9f958b4c944"
+  "size": 68906,
+  "sha256": "c4bea4cc7cfa11d47e8f4ee9b5aeb9e02c5534191a473b3cab0340cffeba7c34"
  },
  {
   "path": "pages/cut.html",
@@ -96,7 +96,7 @@
  },
  {
   "path": "version.json",
-  "size": 146,
-  "sha256": "6a8d9e319c4dccfc5133c0b2d058294f0ccc1e626e2935f1aaf94a92902e6417"
+  "size": 116,
+  "sha256": "a5338fe4d33208517b88a2a2fe8665391f028da828e0b7de0a121d8fec76058f"
  }
 ]
