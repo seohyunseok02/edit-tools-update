@@ -2189,15 +2189,18 @@ const segHint = d => { const cl = d.clips[0], p = cl.clip.layers[cl.slots.main].
    디자인마다 견본 자막의 글자·글꼴·효과 값으로 "지문"을 만들고, 프리미어로 뽑은 사진을 지문별로 보관한다.
    템플릿을 다시 넣어도 지문이 같은 디자인은 예전 사진을 그대로 쓰고, 바뀌었거나 새로 생긴 디자인만 다시 뽑는다. 공유 학습 폴더가 있으면 팀이 같이 쓴다. */
 const PV = { map: store.get('fx-previews') || {} };
+{ let old = 0; for (const k of Object.keys(PV.map)) if (!k.includes(':')) { delete PV.map[k]; old++; } if (old) try { localStorage.setItem('fx-previews', JSON.stringify(PV.map)); } catch (e) {} } // 예전(업체 구분 없는) 사진은 버린다 — 업체별 공유 기록에서 다시 받아 온다
 function fpOf(Tp, d) {
   let s = ''; for (const dc of d.clips) { for (const cp of Tp.comps(dc.clip.node)) for (const p of Tp.params(cp)) if (p) s += p.textContent; s += '|' + Math.round((dc.clip.end - dc.clip.start) / T * 10) + '|' + Math.round(dc.offset / T * 10); }
   let h1 = 0x811c9dc5, h2 = 7; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = (Math.imul(h2, 31) + c) >>> 0; }
   return h1.toString(16) + h2.toString(16) + s.length.toString(16);
 }
-const pvOf = d => (st.tp && d) ? PV.map[d.fp || (d.fp = fpOf(st.tp, d))] || null : null;
+// 사진은 업체별로 둔다: 업체끼리 같은 디자인 견본을 복사해 쓰면 지문(fp)이 같아 다른 업체 사진(다른 원장님 배경)이 보였다
+const pk = fp => clientKey(st.cur || '') + ':' + fp;
+const pvOf = d => (st.tp && d) ? PV.map[pk(d.fp || (d.fp = fpOf(st.tp, d)))] || null : null;
 function savePV() { try { localStorage.setItem('fx-previews', JSON.stringify(PV.map)); } catch (e) { const ks = Object.keys(PV.map); for (const k of ks.slice(0, Math.ceil(ks.length / 3))) delete PV.map[k]; try { localStorage.setItem('fx-previews', JSON.stringify(PV.map)); } catch (e2) {} } } // 꽉 차면 오래된 것부터 버린다
 async function loadSharedPV() { // 팀이 뽑아 둔 사진 받아 오기
-  const LA = learnApi(); if (!LA || !st.cur) return; try { const r = await LA.load({ tool: 'fxpreview', client: clientKey(st.cur) }); let n = 0; for (const x of r.items || []) if (x && x.kind === 'img' && /^[0-9a-f]+$/.test(x.fp || '') && /^data:image\/jpeg;base64,/.test(x.data || '') && !PV.map[x.fp]) { PV.map[x.fp] = x.data; n++; } if (n) { savePV(); renderClient(); renderItems(); } } catch (e) {}
+  const LA = learnApi(); if (!LA || !st.cur) return; try { const r = await LA.load({ tool: 'fxpreview', client: clientKey(st.cur) }); let n = 0; for (const x of r.items || []) if (x && x.kind === 'img' && /^[0-9a-f]+$/.test(x.fp || '') && /^data:image\/jpeg;base64,/.test(x.data || '') && !PV.map[pk(x.fp)]) { PV.map[pk(x.fp)] = x.data; n++; } /* 이 업체 몫으로 뽑힌 사진만(업체별 공유 기록) */ if (n) { savePV(); renderClient(); renderItems(); } } catch (e) {}
 }
 const missingPV = () => st.cat ? st.cat.designs.filter(d => !pvOf(d)) : [];
 async function makePreviews(given) {
@@ -2209,7 +2212,7 @@ async function makePreviews(given) {
     if (!path && cl && cl.tplPath) { try { raw = await api.read(cl.tplPath); path = cl.tplPath; } catch (e) { raw = null; } }
     if (!path) { note.textContent = '템플릿 프로젝트 파일을 골라 주세요 (등록한 것과 같은 파일). 한 번 고르면 다음부터는 묻지 않습니다.'; path = await api.pick('project'); if (!path) { note.textContent = ''; return; } }
     if (!raw) raw = await api.read(path); if (cl && cl.tplPath !== path) { cl.tplPath = path; await saveClient(); }
-    const Tp = await E.Proj.fromBytes(new Uint8Array(raw), path.split('\\').pop()), cat = E.analyzeTemplate(Tp), need = cat.designs.filter(d => !PV.map[d.fp = fpOf(Tp, d)]);
+    const Tp = await E.Proj.fromBytes(new Uint8Array(raw), path.split('\\').pop()), cat = E.analyzeTemplate(Tp), need = cat.designs.filter(d => !PV.map[pk(d.fp = fpOf(Tp, d))]);
     if (!need.length) { note.textContent = '모든 디자인의 사진이 이미 있습니다. 템플릿의 디자인이 바뀌면 바뀐 것만 다시 뽑습니다.'; return; }
     const spec = need.map(d => { const a = Math.max(...d.clips.map(x => x.clip.start)), z = d.clips[0].clip.end, t = (a + (z - a) * 0.6) / E.TICKS; return t.toFixed(3) + '@' + [...new Set(d.clips.map(x => x.clip.track))].join(','); });
     note.textContent = `프리미어를 켜서 디자인 ${need.length}개의 사진을 뽑는 중… (1~3분, 끝날 때까지 프리미어를 건드리지 마세요)`; st.pvBusy = true; if ($('btnPrev')) $('btnPrev').disabled = true;
@@ -2220,7 +2223,7 @@ async function makePreviews(given) {
       const k = +((/^c(\d+)\.jpg$/.exec(c.name) || [])[1]), d = need[k]; if (!d) continue;
       const im = await new Promise((res, rej) => { const x = new Image(); x.crossOrigin = 'anonymous'; x.onload = () => res(x); x.onerror = () => rej(new Error('사진을 읽지 못했습니다')); x.src = 'etv://cand/' + c.name + '?t=' + Date.now(); });
       const cv = document.createElement('canvas'), w = 320; cv.width = w; cv.height = Math.round(im.naturalHeight / im.naturalWidth * w); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
-      PV.map[d.fp] = cv.toDataURL('image/jpeg', 0.7); got.push({ kind: 'img', fp: d.fp, name: d.name, data: PV.map[d.fp] });
+      PV.map[pk(d.fp)] = cv.toDataURL('image/jpeg', 0.7); got.push({ kind: 'img', fp: d.fp, name: d.name, data: PV.map[pk(d.fp)] });
     }
     savePV(); const LA = learnApi(); let shared = false;
     if (LA && got.length && st.cur) { try { shared = (await LA.put({ tool: 'fxpreview', client: clientKey(st.cur), rec: 'p' + Date.now().toString(36), items: got })).shared; } catch (e) {} }
