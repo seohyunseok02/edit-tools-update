@@ -1951,7 +1951,7 @@ let items = [], gid = null, hover = null, sound = true, lastSeen = '', busy = fa
 try { sound = localStorage.getItem('omok-sound') !== '0'; } catch {}
 const put = (rec, it) => LA().put({ tool: 'omok', client: '공통', rec, items: it ? [Object.assign({ ts: Date.now() }, it)] : [] }); // it 가 없으면 이 rec 의 내 내용을 비운다(omok 폴더의 내 파일 안에서만)
 async function load() { const L = LA(); if (!L) return items; try { const [a, b] = await Promise.all([L.load({ tool: 'omok', client: '공통' }), L.load({ tool: 'usage', client: 'now' })]);
-  items = (a.items || []).filter(x => x && /^(inv|acc|mv)$/.test(x.kind)).concat((b.items || []).filter(x => x && x.kind === 'now')); } catch (e) {} return items; }
+  items = (a.items || []).filter(x => x && /^(inv|acc|mv|seen)$/.test(x.kind)).concat((b.items || []).filter(x => x && x.kind === 'now')); } catch (e) {} return items; }
 
 /* 판 상태: 신청(inv)에서 흑·백을 정하고, 두 사람이 각자 남긴 수 목록(mv)을 번갈아 합친다 */
 function game(id) {
@@ -2017,11 +2017,12 @@ function render() {
     if (g.done) { const w = g.winner === me; st.textContent = !g.winner ? '무승부입니다' : (w ? '이겼습니다! 🎉' : '졌습니다') + (g.resigned ? ' (기권)' : '') + ` · ${opp}님과의 대국`; st.className = g.winner ? (w ? 'win' : 'lose') : ''; }
     else st.textContent = g.turn === me ? `내 차례입니다 · 나는 ${col}` : `${opp}님 차례입니다… · 나는 ${col}`; }
   else { const no = items.filter(x => x.kind === 'inv' && x.from === me && Date.now() - x.ts < INV_MS).sort((a, b) => b.ts - a.ts)[0], rej = no && items.some(a => a.kind === 'acc' && a.id === no.id && !a.ok);
-    st.textContent = inv ? `${inv.to}님에게 신청했습니다. 받기를 기다리는 중…` : rej ? `${no.to}님이 다음에 하자고 했습니다` : '대국 상대를 고르세요'; }
+    const seen = inv && items.some(x => x.kind === 'seen' && x.id === inv.id), late = inv && Date.now() - inv.id > 20000;
+    st.textContent = inv ? (seen ? `${inv.to}님 화면에 신청이 떴습니다. 받기를 기다리는 중…` : late ? `아직 ${inv.to}님 화면에 안 떴습니다. 상대 프로그램이 꺼져 있거나 PC가 잠들어 있을 수 있어요` : `${inv.to}님에게 신청했습니다. 전달되는 중…`) : rej ? `${no.to}님이 다음에 하자고 했습니다` : '대국 상대를 고르세요'; }
   // 사람 목록
-  const here = new Map(); for (const x of items) if (x.kind === 'now' && x.name && x.name !== me && Date.now() - x.ts < HERE_MS && (!here.has(x.name) || here.get(x.name) < x.ts)) here.set(x.name, x.ts);
+  const here = new Map(); for (const x of items) if (x.kind === 'now' && x.name && x.name !== me && Date.now() - x.ts < HERE_MS && (!here.has(x.name) || here.get(x.name).ts < x.ts)) here.set(x.name, x);
   const ul = $('people'); ul.textContent = ''; const playing = g && !g.done;
-  for (const name of [...here.keys()].sort()) { const li = document.createElement('li'), b = document.createElement('button'); li.innerHTML = '<span class="dot"></span>'; li.append(name); b.textContent = '한 판 하자'; b.disabled = !!(playing || inv); b.onclick = () => invite(name); li.append(b); ul.append(li); }
+  for (const name of [...here.keys()].sort()) { const li = document.createElement('li'), b = document.createElement('button'); const x = here.get(name), away = x.idle || Date.now() - x.ts > 90000; li.innerHTML = '<span class="dot"></span>'; li.append(name); if (away) { li.style.opacity = '.55'; li.title = '자리를 비웠거나 프로그램이 응답하지 않습니다'; const sm = document.createElement('small'); sm.textContent = ' 자리 비움'; sm.style.color = 'var(--mute)'; li.append(sm); } b.textContent = '한 판 하자'; b.disabled = !!(playing || inv); b.onclick = () => invite(name); li.append(b); ul.append(li); }
   $('peopleNote').textContent = here.size ? '' : '지금 접속한 다른 사람이 없습니다. 편집 도구 모음을 켠 사람만 보입니다.';
   // 전적
   const done = recs().filter(x => Date.now() - x.id < 30 * 864e5);
@@ -2061,8 +2062,11 @@ $('btnFolder').onclick = async () => { $('folderNote').textContent = '';
   try { const c = await LA().config(); if (!c.ok) throw new Error('공유 폴더가 연결되어 있지 않습니다'); const dir = c.dir.replace(/[\\/]+$/, '') + '\\omok', r = await P.thumbApi.open(dir); if (r) $('folderNote').textContent = '지울 오목 기록이 없습니다(폴더가 없음).'; }
   catch (e) { $('folderNote').textContent = '폴더를 열지 못했습니다: ' + (e.message || e); } };
 window.addEventListener('resize', draw);
-(function loop() { const g = cur(), active = (g && !g.done) || myInv(); const hidden = (() => { try { return frameElement && frameElement.hidden; } catch { return document.hidden; } })();
-  if (active || !hidden) tick(); setTimeout(loop, 2000); })(); // 오목 화면을 보거나 대국·신청 중일 때만 2초마다 읽는다(숨겨져 있고 할 일이 없으면 읽지 않음)
+function loop() { const g = cur(), active = (g && !g.done) || myInv(); const hidden = (() => { try { return frameElement && frameElement.hidden; } catch { return document.hidden; } })();
+  if (active || !hidden) tick(); }
+// 창이 최소화되거나 다른 창 뒤에 있어도 늦어지지 않게 워커 시계로 돈다(브라우저는 숨은 창의 일반 타이머를 1분까지 늦춘다)
+try { const wk = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 2000)'], { type: 'text/javascript' }))); wk.onmessage = loop; } catch (e) { setInterval(loop, 2000); }
+loop(); // 오목 화면을 보거나 대국·신청 중일 때만 2초마다 읽는다(숨겨져 있고 할 일이 없으면 읽지 않음)
 </script>
 </body>
 </html>

@@ -294,12 +294,16 @@ async function omokPoll() {
   if (!auth.me || !window.learnApi) return;
   await omokLoad(); const me = meName(), answered = id => omokItems.some(x => x.kind === 'acc' && x.id === id);
   // 내 것 지우기: 신청·답은 3분 뒤, 둔 수는 30분 넘게 멈췄으면(창을 닫았던 판 등)
-  for (const [rec, kind, ms] of [['inv', 'inv', 180000], ['acc', 'acc', 180000], ['mv', 'mv', 1800000]]) { const x = omokItems.find(i => i.kind === kind && (i.from === me || i.by === me)); if (x && Date.now() - x.ts > ms) { try { await learnApi.put({ tool: 'omok', client: '공통', rec, items: [] }); } catch (e) {} } }
+  for (const [rec, kind, ms] of [['inv', 'inv', 180000], ['acc', 'acc', 180000], ['seen', 'seen', 180000], ['mv', 'mv', 1800000]]) { const x = omokItems.find(i => i.kind === kind && (i.from === me || i.by === me)); if (x && Date.now() - x.ts > ms) { try { await learnApi.put({ tool: 'omok', client: '공통', rec, items: [] }); } catch (e) {} } }
   const inv = omokItems.filter(x => x.kind === 'inv' && x.to === me && !x.off && Date.now() - x.ts < 120000 && !answered(x.id) && !omokSeen.has(String(x.id))).sort((a, b) => b.ts - a.ts)[0];
-  if (inv) { omokSeen.add(String(inv.id)); ls.set('omok-seen', [...omokSeen].slice(-50)); omokMsg(`⚫ ${inv.from}님이 오목 한 판 하자고 합니다`, inv); }
+  if (inv) { omokSeen.add(String(inv.id)); ls.set('omok-seen', [...omokSeen].slice(-50)); omokMsg(`⚫ ${inv.from}님이 오목 한 판 하자고 합니다`, inv);
+    try { await learnApi.put({ tool: 'omok', client: '공통', rec: 'seen', items: [{ kind: 'seen', id: inv.id, by: me, ts: Date.now() }] }); } catch (e) {} } // 신청한 사람에게 '화면에 떴다'고 알린다
   else if (omokInv && (answered(omokInv.id) || omokItems.some(x => x.kind === 'inv' && x.id === omokInv.id && x.off) || Date.now() - omokInv.ts > 120000)) { omokInv = null; $('omokToast').hidden = true; } // 취소·시간 지남
 }
-setInterval(omokPoll, 5000); setTimeout(omokPoll, 3000);
+// 창이 최소화되거나 다른 창 뒤에 있어도 신청이 늦게 뜨지 않게 워커 시계로 돈다(브라우저는 숨은 창의 일반 타이머를 1분까지 늦춘다). 접속 표시(uFlush)도 같은 시계로
+let hubBeat = 0;
+try { const wk = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 5000)'], { type: 'text/javascript' }))); wk.onmessage = () => { omokPoll(); if (++hubBeat % 12 === 0) uFlush(); }; window.__hubWorker = true; } catch (e) { setInterval(omokPoll, 5000); }
+setTimeout(omokPoll, 3000);
 window.hubOmok = { me: meName, toast: t => omokMsg(t) };
 $('omokBtn').onclick = () => open('omok');
 $('otGo').onclick = () => omokAnswer(true); $('otNo').onclick = () => omokAnswer(false);
@@ -580,7 +584,7 @@ function onFrameLoad(id) {
 }
 
 /* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
-const VER_LABEL = 'ver.1126.81'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1126.84'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});
@@ -655,25 +659,55 @@ async function startLogin() {
   if (u) return signedIn(u, true);
   showLogin();
 }
+/* 로그인 비밀번호 칸: 프로그램의 크롬 엔진(Electron 33)은 한글 입력기가 켜진 채 비밀번호 칸에 치면 글자를 늦게 넣거나 삼킨다(시험: 8번 눌러 1글자).
+   그래서 일반 글자 칸을 점으로 가려 보이게 하고, 글자는 키를 누를 때 자판 위치(e.code)로 직접 모은다 → 한글 모드여도 영문 자판 그대로 들어간다(크롬 비밀번호 칸과 같음) */
+const PW = new WeakMap(), US_SHIFT = { Digit1: '!', Digit2: '@', Digit3: '#', Digit4: '$', Digit5: '%', Digit6: '^', Digit7: '&', Digit8: '*', Digit9: '(', Digit0: ')', Minus: '_', Equal: '+', BracketLeft: '{', BracketRight: '}', Backslash: '|', Semicolon: ':', Quote: '"', Comma: '<', Period: '>', Slash: '?', Backquote: '~' },
+  US_BASE = { Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`', Space: ' ' };
+function pwChar(e) {
+  const caps = e.getModifierState && e.getModifierState('CapsLock'), kc = e.keyCode; // 자판 위치(code)가 없는 입력(원격·가상 키보드)은 키 번호로
+  const c = e.code || (kc >= 65 && kc <= 90 ? 'Key' + String.fromCharCode(kc) : kc >= 48 && kc <= 57 ? 'Digit' + (kc - 48) : '');
+  let m = /^Key([A-Z])$/.exec(c); if (m) return (e.shiftKey !== !!caps) ? m[1] : m[1].toLowerCase();
+  m = /^Digit(\d)$/.exec(c); if (m) return e.shiftKey ? US_SHIFT[c] : m[1];
+  m = /^Numpad(\d)$/.exec(c); if (m) return /^\d$/.test(e.key) ? m[1] : '';
+  if (US_BASE[c] != null) return e.shiftKey && US_SHIFT[c] ? US_SHIFT[c] : US_BASE[c];
+  return e.key && e.key.length === 1 && /[\x21-\x7e]/.test(e.key) ? e.key : '';
+}
+function pwBox(el) {
+  el.type = 'text'; el.style.webkitTextSecurity = 'disc'; el.spellcheck = false; el.setAttribute('autocomplete', 'off'); el.setAttribute('autocapitalize', 'off'); PW.set(el, '');
+  const show = () => { el.value = PW.get(el); el.setSelectionRange(el.value.length, el.value.length); };
+  const all = () => el.value.length && el.selectionStart === 0 && el.selectionEnd === el.value.length;
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape') return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) { if (/^Key[AVC]$/.test(e.code)) return; e.preventDefault(); return; } // 전체 선택·붙여넣기만
+    if (e.key === 'Backspace' || e.key === 'Delete' || e.code === 'Backspace' || e.code === 'Delete') { e.preventDefault(); PW.set(el, all() ? '' : e.code === 'Delete' ? PW.get(el) : PW.get(el).slice(0, -1)); return show(); }
+    if (/^Arrow|^Home$|^End$/.test(e.key)) return;
+    // 한글 모드에서 글자가 아닌 키(숫자·기호)는 입력기 몫(229)이 먼저 오고 진짜 키가 한 번 더 온다 → 앞의 것은 건너뛴다
+    const ch = e.keyCode === 229 && !/^Key[A-Z]$/.test(e.code || '') ? '' : pwChar(e); e.preventDefault(); if (ch) { PW.set(el, (all() ? '' : PW.get(el)) + ch); show(); }
+  });
+  el.addEventListener('paste', e => { e.preventDefault(); PW.set(el, (all() ? '' : PW.get(el)) + (e.clipboardData.getData('text') || '').replace(/[\r\n]/g, '')); show(); });
+  const fix = () => { if (el.value !== PW.get(el)) show(); }; // 입력기가 끼워 넣은 글자는 지운다
+  el.addEventListener('compositionend', () => setTimeout(fix, 0)); el.addEventListener('input', e => { if (!e.isComposing) fix(); }); el.addEventListener('blur', fix);
+}
+const pwOf = el => PW.has(el) ? PW.get(el) : el.value, pwClear = el => { if (PW.has(el)) PW.set(el, ''); el.value = ''; };
+pwBox($('lgPw')); pwBox($('lgPw2'));
 function showLogin(msg) {
   const first = !active().length; $('login').hidden = false;
   $('lgSub').textContent = first ? '처음 쓰는 편집기입니다. 관리자 계정을 만드세요. 이 계정으로 다른 사람을 추가합니다.' : '이름을 고르고 비밀번호를 넣으세요.';
   $('lgName').hidden = first; $('lgNew').hidden = !first; $('lgPw2Box').hidden = !first; $('lgGo').textContent = first ? '관리자 계정 만들기' : '로그인';
-  $('lgPw').autocomplete = first ? 'new-password' : 'current-password';
-  $('lgName').innerHTML = active().map(u => `<option>${esc(u.name)}</option>`).join(''); const last = ls.get('hub-lastuser', ''); if (last && active().some(u => u.name === last)) $('lgName').value = last;
-  drawKakao(); $('lgErr').textContent = msg || ''; $('lgPw').value = ''; $('lgPw2').value = ''; setTimeout(() => (first ? $('lgNew') : $('lgPw')).focus(), 50);
+    $('lgName').innerHTML = active().map(u => `<option>${esc(u.name)}</option>`).join(''); const last = ls.get('hub-lastuser', ''); if (last && active().some(u => u.name === last)) $('lgName').value = last;
+  drawKakao(); $('lgErr').textContent = msg || ''; pwClear($('lgPw')); pwClear($('lgPw2')); setTimeout(() => (first ? $('lgNew') : $('lgPw')).focus(), 50);
 }
 $('lgForm').onsubmit = async e => {
   e.preventDefault(); const err = t => { $('lgErr').textContent = t; }; $('lgGo').disabled = true;
   try {
     await loadUsers().catch(() => {});
     if (!active().length) {
-      const name = $('lgNew').value.trim(), pw = $('lgPw').value;
-      if (!name) return err('이름을 넣어 주세요.'); if (pw.length < 4) return err('비밀번호는 4자 이상으로 해 주세요.'); if (pw !== $('lgPw2').value) return err('두 비밀번호가 다릅니다.');
+      const name = $('lgNew').value.trim(), pw = pwOf($('lgPw'));
+      if (!name) return err('이름을 넣어 주세요.'); if (pw.length < 4) return err('비밀번호는 4자 이상으로 해 주세요.'); if (pw !== pwOf($('lgPw2'))) return err('두 비밀번호가 다릅니다.');
       return signedIn(await saveUser(Object.assign({ name, role: 'admin' }, await newPw(pw))));
     }
     const u = active().find(x => x.name === $('lgName').value); if (!u) return err('이름을 골라 주세요.');
-    if (await pwHash($('lgPw').value, unb64(u.salt)) !== u.hash) return err('비밀번호가 맞지 않습니다.');
+    if (await pwHash(pwOf($('lgPw')), unb64(u.salt)) !== u.hash) return err('비밀번호가 맞지 않습니다.');
     signedIn(u);
   } catch (er) { err('로그인하지 못했습니다: ' + er.message); } finally { $('lgGo').disabled = false; }
 };
@@ -705,7 +739,7 @@ async function uFlush() {
     const idle = Date.now() - uInput > 5 * 60000 || document.visibilityState !== 'visible';
     await learnApi.put({ tool: 'usage', client: 'now', rec: 'now', items: [{ kind: 'now', name: auth.me.name, tab: cur === 'omok' ? '' : cur, ts: t, idle }] }); } catch (e) {}
 }
-setInterval(uFlush, 60000); window.addEventListener('beforeunload', () => { uFlush(); });
+if (!window.__hubWorker) setInterval(uFlush, 60000); window.addEventListener('beforeunload', () => { uFlush(); });
 /* 사용 현황은 주인(owner)만: appcfg/공통 의 owner. 없고 관리자가 한 명뿐이면 그 사람이 주인이 된다 */
 let owner = '';
 async function loadOwner() {
