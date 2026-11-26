@@ -277,18 +277,22 @@ $('stGo').onclick = () => smokeShown && smokeJoin(smokeShown.c);
 $('stPass').onclick = $('stX').onclick = () => { $('smokeToast').hidden = true; };
 /* ================= 오목: 대국 신청 알림. 판은 오목 탭(omok.html)이 둔다 =================
    공유 폴더 읽기는 프로그램이 한 번에 하나씩만 처리한다. 나스가 느린 PC에서 2·5초마다 따로 읽으면 요청이 밀려 신청·답이 몇 분씩 늦었다(실측 약 2분).
-   그래서 허브 한 곳만 읽고(오목 탭은 이 결과를 받아 씀), 한 번에 하나만, 읽는 데 걸린 시간의 5배 이상 쉬었다가 다시 읽는다. 대국·신청 중엔 2초, 아니면 5초가 기본
+   그래서 허브 한 곳만 읽고(오목 탭은 이 결과를 받아 씀), 한 번에 하나만, 읽는 데 걸린 시간의 5배 이상 쉬었다가 다시 읽는다. 대국·신청 중엔 3초, 아니면 5초가 기본.
+   같은 파일을 몇 초마다 열면 윈도우가 그 파일 연결을 계속 붙잡고 예전 내용을 보여 준다(나스가 바뀌었다고 알려 주지 않음: 실측, 몇 분씩 옛 내용).
+   그래서 같은 내용을 칸 5개(omok/s0~s4)에 써 두고 읽을 때는 한 칸씩 돌아가며 읽는다 → 한 파일은 15~25초에 한 번만 열린다. 접속 기록(usage/now)도 30초에 한 번만
    공유 폴더의 omok 폴더에만 쓴다: inv(신청)·acc(받기/거절)·mv(둔 수). 내 것만 비운다 — 신청·답은 3분 뒤, 둔 수는 판이 끝나고 1분 뒤(오목 탭)
    또는 30분 넘게 멈춘 판은 여기서. 접속한 사람은 허브의 접속 기록(usage/now)을 읽기만 한다 */
-let omokItems = [], omokNow = [], omokInv = null, omokBusy = false, omokLast = 0, omokDur = 0, omokFast = 0;
+let omokItems = [], omokNow = [], omokInv = null, omokBusy = false, omokLast = 0, omokDur = 0, omokFast = 0, omokSlot = 0, omokNowAt = 0;
+const OMOK_SLOTS = 5;
+async function omokPut(rec, items) { for (let i = 0; i < OMOK_SLOTS; i++) await learnApi.put({ tool: 'omok', client: 's' + i, rec, items }); }
 const omokSeen = new Set(ls.get('omok-seen', []));
 async function omokLoad() { // 오목 기록 + 접속 기록(누가 켜 있나)을 한 번에
   if (!auth.me || !window.learnApi) return []; const t = performance.now(); omokLast = Date.now();
-  try { const a = await learnApi.load({ tool: 'omok', client: '공통' }), b = await learnApi.load({ tool: 'usage', client: 'now' });
-    omokItems = (a.items || []).filter(x => x && /^(inv|acc|mv|seen)$/.test(x.kind)); omokNow = (b.items || []).filter(x => x && x.kind === 'now'); } catch (e) {}
+  try { const a = await learnApi.load({ tool: 'omok', client: 's' + (omokSlot++ % OMOK_SLOTS) }); omokItems = (a.items || []).filter(x => x && /^(inv|acc|mv|seen)$/.test(x.kind));
+    if (Date.now() - omokNowAt > 30000) { omokNowAt = Date.now(); const b = await learnApi.load({ tool: 'usage', client: 'now' }); omokNow = (b.items || []).filter(x => x && x.kind === 'now'); } } catch (e) {}
   omokDur = performance.now() - t; return omokItems;
 }
-const omokDue = () => Date.now() - omokLast >= Math.max(Date.now() - omokFast < 15000 ? 2000 : 5000, omokDur * 5);
+const omokDue = () => Date.now() - omokLast >= Math.max(Date.now() - omokFast < 15000 ? 3000 : 5000, omokDur * 5);
 function omokMsg(title, invite) { // invite 가 있으면 받기/다음에 버튼, 없으면 알림만(눌러서 오목 탭 열기)
   omokInv = invite || null; $('otTitle').textContent = title; $('otBtns').hidden = !invite; $('omokToast').hidden = false;
   if (!document.hasFocus()) { try { const n = new Notification(title, { body: invite ? '받으려면 눌러서 편집 도구 모음을 여세요' : '눌러서 오목 판을 여세요', tag: 'omok' }); n.onclick = () => { window.focus(); if (!invite) open('omok'); }; } catch (e) {} }
@@ -298,7 +302,7 @@ async function omokAnswer(ok) {
   const v = omokInv; $('omokToast').hidden = true; omokInv = null; if (!v) return;
   if (ok) open('omok');
   for (let i = 0; i < 100; i++) { try { const w = frames.omok && frames.omok.contentWindow; if (w && w.omokAccept) return w.omokAccept(v.id, ok); } catch (e) {} if (!ok) break; await new Promise(r => setTimeout(r, 100)); }
-  try { await learnApi.put({ tool: 'omok', client: '공통', rec: 'acc', items: [{ kind: 'acc', id: v.id, by: meName(), ok: !!ok, ts: Date.now() }] }); } catch (e) {} // 오목 탭을 안 열고 거절할 때
+  try { await omokPut('acc', [{ kind: 'acc', id: v.id, by: meName(), ok: !!ok, ts: Date.now() }]); } catch (e) {} // 오목 탭을 안 열고 거절할 때
 }
 async function omokPoll(force) {
   if (!auth.me || !window.learnApi || omokBusy || (!force && !omokDue())) return; omokBusy = true;
@@ -307,17 +311,17 @@ async function omokPoll(force) {
 async function omokPoll1() {
   await omokLoad(); const me = meName(), answered = id => omokItems.some(x => x.kind === 'acc' && x.id === id);
   // 내 것 지우기: 신청·답은 3분 뒤, 둔 수는 30분 넘게 멈췄으면(창을 닫았던 판 등)
-  for (const [rec, kind, ms] of [['inv', 'inv', 180000], ['acc', 'acc', 180000], ['seen', 'seen', 180000], ['mv', 'mv', 1800000]]) { const x = omokItems.find(i => i.kind === kind && (i.from === me || i.by === me)); if (x && Date.now() - x.ts > ms) { try { await learnApi.put({ tool: 'omok', client: '공통', rec, items: [] }); } catch (e) {} } }
+  for (const [rec, kind, ms] of [['inv', 'inv', 180000], ['acc', 'acc', 180000], ['seen', 'seen', 180000], ['mv', 'mv', 1800000]]) { const x = omokItems.find(i => i.kind === kind && (i.from === me || i.by === me)); if (x && Date.now() - x.ts > ms) { try { await omokPut(rec, []); } catch (e) {} } }
   const inv = omokItems.filter(x => x.kind === 'inv' && x.to === me && !x.off && Date.now() - x.ts < 120000 && !answered(x.id) && !omokSeen.has(String(x.id))).sort((a, b) => b.ts - a.ts)[0];
   if (inv) { omokSeen.add(String(inv.id)); ls.set('omok-seen', [...omokSeen].slice(-50)); omokMsg(`⚫ ${inv.from}님이 오목 한 판 하자고 합니다`, inv);
-    try { await learnApi.put({ tool: 'omok', client: '공통', rec: 'seen', items: [{ kind: 'seen', id: inv.id, by: me, ts: Date.now() }] }); } catch (e) {} } // 신청한 사람에게 '화면에 떴다'고 알린다
+    try { await omokPut('seen', [{ kind: 'seen', id: inv.id, by: me, ts: Date.now() }]); } catch (e) {} } // 신청한 사람에게 '화면에 떴다'고 알린다
   else if (omokInv && (answered(omokInv.id) || omokItems.some(x => x.kind === 'inv' && x.id === omokInv.id && x.off) || Date.now() - omokInv.ts > 120000)) { omokInv = null; $('omokToast').hidden = true; } // 취소·시간 지남
 }
 // 창이 최소화되거나 다른 창 뒤에 있어도 신청이 늦게 뜨지 않게 워커 시계로 돈다(브라우저는 숨은 창의 일반 타이머를 1분까지 늦춘다). 접속 표시(uFlush)도 같은 시계로
 let hubBeat = 0;
 try { const wk = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 1000)'], { type: 'text/javascript' }))); wk.onmessage = () => { omokPoll(); if (++hubBeat % 60 === 0) uFlush(); }; window.__hubWorker = true; } catch (e) { setInterval(omokPoll, 1000); }
 setTimeout(omokPoll, 3000);
-window.hubOmok = { me: meName, toast: t => omokMsg(t), snapshot: () => omokItems.concat(omokNow), fast: () => { omokFast = Date.now(); },
+window.hubOmok = { me: meName, toast: t => omokMsg(t), put: (rec, it) => omokPut(rec, it ? [Object.assign({ ts: Date.now() }, it)] : []), snapshot: () => omokItems.concat(omokNow), fast: () => { omokFast = Date.now(); },
   poke: async () => { for (let i = 0; omokBusy && i < 600; i++) await new Promise(r => setTimeout(r, 50)); return omokPoll(true); } }; // 오목 탭이 수를 둔 뒤 바로 다시 읽게
 $('omokBtn').onclick = () => open('omok');
 $('otGo').onclick = () => omokAnswer(true); $('otNo').onclick = () => omokAnswer(false);
@@ -598,7 +602,7 @@ function onFrameLoad(id) {
 }
 
 /* ================= 버전 · 업데이트 알림 · 학습 폴더 (예전 프로그램 틀에는 없을 수 있다) ================= */
-const VER_LABEL = 'ver.1126.86'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
+const VER_LABEL = 'ver.1126.88'; // 배포할 때 publish-update.js 가 "ver.월일.번호"로 채운다
 const ver = $('ver');
 if (window.appUpdate) {
   appUpdate.info().then(i => { ver.textContent = VER_LABEL.endsWith('.' + i.n) ? VER_LABEL : 'ver.' + i.n; }).catch(() => {});

@@ -1950,7 +1950,7 @@ const N = 15, INV_MS = 120000, HERE_MS = 180000;
 let items = [], gid = null, hover = null, sound = true, lastSeen = '', busy = false, shown = null, doneAt = 0;
 try { sound = localStorage.getItem('omok-sound') !== '0'; } catch {}
 let writing = 0; // 쓰는 동안에는 화면 목록을 바꾸지 않는다(방금 둔 돌이 깜빡이지 않게)
-const put = async (rec, it) => { writing++; try { await LA().put({ tool: 'omok', client: '공통', rec, items: it ? [Object.assign({ ts: Date.now() }, it)] : [] }); try { await P.hubOmok.poke(); } catch (e) {} } finally { writing--; } }; // it 가 없으면 이 rec 의 내 내용을 비운다(omok 폴더의 내 파일 안에서만)
+const put = async (rec, it) => { writing++; try { await P.hubOmok.put(rec, it); try { await P.hubOmok.poke(); } catch (e) {} } finally { writing--; } }; // it 가 없으면 이 rec 의 내 내용을 비운다(omok 폴더의 내 파일 안에서만)
 // 공유 폴더는 허브가 한 곳에서만 읽는다(느린 PC에서 요청이 밀리지 않게). 여기서는 허브가 읽어 둔 것을 받아 쓴다
 async function load() { if (writing) return items; try { P.hubOmok.fast(); items = P.hubOmok.snapshot().slice(); } catch (e) {} return items; }
 window.omokFeed = () => tick();
