@@ -1,8 +1,8 @@
 [
  {
   "path": "hub.html",
-  "size": 88630,
-  "sha256": "938a6208e0861ef1e26fed6f0e5f6582ee6c2a0ab289d37f129ccbebac846531"
+  "size": 90220,
+  "sha256": "976d5eea56cbf8591b05b400d1c79d3c14b2e3ce8db5cf3e780dd8b9c6706ebd"
  },
  {
   "path": "pages/cut.html",
@@ -36,8 +36,8 @@
  },
  {
   "path": "pages/omok.html",
-  "size": 208486,
-  "sha256": "afe863e4c3f8667befba340baefc358e902516c4e66490fb7c0d61542e2a1b8f"
+  "size": 208679,
+  "sha256": "1d33448f6da48163b2d93f2817729d2af4b18b0cefba7721ab4263e3c6c765c4"
  },
  {
   "path": "pages/shorts.html",
@@ -112,6 +112,6 @@
  {
   "path": "version.json",
   "size": 73,
-  "sha256": "d59b86c5187e36a7b522bab052fbd88c83e2f0e268923c38b90a27e49971cbcf"
+  "sha256": "595a9b51162488133ef24c9c83d833b54c51529157f85917e29ea301bf5243e9"
  }
 ]
