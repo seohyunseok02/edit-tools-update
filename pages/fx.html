@@ -2288,7 +2288,15 @@ function renderClient() {
 }
 function ready() { const ok = !!(st.cat); $('s2').classList.toggle('off', !ok); const ok2 = ok && !!st.M; $('s3').classList.toggle('off', !ok2); $('s4').classList.toggle('off', !ok2); $('s5').classList.toggle('off', !ok2); renderGuide(); }
 $('client').onchange = () => pickClient($('client').value);
-$('btnAdd').onclick = async () => { const n = $('newName').value.trim(); if (!n) return show('err1', '새 업체 이름을 적어 주세요.'); if (!st.clients[n]) st.clients[n] = { name: n }; $('newName').value = ''; st.cur = n; fillClients(); await saveClient(); pickClient(n); };
+/* 같은 업체가 여러 개 생기지 않게: 띄어쓰기·기호·대소문자만 다르면 같은 업체로 보고 그 업체를 고른다("운정 표병원" → "운정표병원").
+   한쪽 이름이 다른 쪽에 들어 있으면("서울아산" / "서울아산병원") 정말 새로 만들지 묻는다 */
+const nameKey = n => String(n || '').replace(/[\s·.,\-_()（）\[\]'"]/g, '').toLowerCase();
+$('btnAdd').onclick = async () => { const n = $('newName').value.trim().replace(/\s+/g, ' '); if (!n) return show('err1', '새 업체 이름을 적어 주세요.');
+  const k = nameKey(n), names = Object.keys(st.clients), same = names.find(x => nameKey(x) === k);
+  if (same) { $('newName').value = ''; st.cur = same; fillClients(); pickClient(same); return show('err1', `이미 있는 업체 "${same}"을(를) 골랐습니다. 띄어쓰기·기호만 다른 이름은 같은 업체로 봅니다.`); }
+  const near = names.filter(x => { const y = nameKey(x); return y.length >= 2 && k.length >= 2 && (y.includes(k) || k.includes(y)); });
+  if (near.length && !confirm(`비슷한 업체가 있습니다: ${near.join(', ')}\n같은 곳이면 [취소]를 누르고 목록에서 고르세요.\n"${n}"을(를) 새 업체로 만들까요?`)) return;
+  if (!st.clients[n]) st.clients[n] = { name: n }; $('newName').value = ''; st.cur = n; fillClients(); await saveClient(); pickClient(n); };
 $('btnDel').onclick = async () => { const n = st.cur; if (!n) return; if ($('btnDel').dataset.sure !== n) { $('btnDel').dataset.sure = n; $('btnDel').textContent = `"${n}" 삭제 확인`; setTimeout(() => { $('btnDel').dataset.sure = ''; $('btnDel').textContent = '이 업체 삭제'; }, 4000); return; } delete st.clients[n]; await DB.del(n); await shareClient({ name: n, savedAt: Date.now() }, true); $('btnDel').dataset.sure = ''; $('btnDel').textContent = '이 업체 삭제'; st.cur = ''; fillClients(); pickClient($('client').value); };
 function hookDrop(id, fileId, fn) {
   const d = $(id), f = $(fileId); d.onclick = () => f.click(); d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); f.click(); } };
