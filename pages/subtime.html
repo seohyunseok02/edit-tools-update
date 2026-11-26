@@ -100,6 +100,10 @@ details summary{cursor:pointer;color:var(--mute);font-size:13px}
     <div class="drop" id="dropF" tabindex="0" role="button"><b>교정 XML · .vrew · mp3 · 프로젝트(.prproj)</b><span id="nameF">여기에 끌어다 놓거나 눌러서 고르세요</span></div>
     <input type="file" id="fileF" accept=".xml,.vrew,.mp3,.wav,.m4a,.prproj" multiple hidden>
     <div class="kv" id="fileList"></div>
+    <details id="scriptBox" style="margin:12px 0;padding:10px 14px;border:1px solid var(--accent);border-radius:10px;background:var(--accent-soft)"><summary style="cursor:pointer;font-weight:600"><span id="scriptSum">📄 대본이 있다면? </span><span class="note" id="scriptHint" style="font-weight:400">(눌러서 열기)</span></summary>
+      <div class="row" style="margin-top:8px"><button id="btnScript">대본 넣기 (.docx · .txt)</button><input type="file" id="fileScript" accept=".docx,.txt" hidden><button id="btnNoScript2" hidden>대본 빼기</button></div>
+      <p class="note" id="scriptState">대본이 있으면 의학 용어·이름·숫자 표기를 대본에서 가져옵니다. 대본과 다르게 말한 부분은 그대로 둡니다.</p>
+    </details>
     <div class="row"><button id="btnReset">처음부터 다시 (넣은 파일 모두 비우기)</button></div>
     <div class="kv" id="fixBox" hidden>
       <h3>자막 교정 <small class="note">브루에서 내보낸 XML 그대로라면 먼저 교정하세요</small></h3>
@@ -1928,7 +1932,7 @@ function runTiming(o) {
 /* ---------- 자막 교정 (브루 XML 그대로일 때): 맞춤법·띄어쓰기는 GPT, 줄 끝 온점·반점 지우기는 규칙. 자막 수·시간·구조는 그대로 ---------- */
 // 말끝(줄 끝·띄어쓰기 앞)의 온점·반점은 모두 지운다. 숫자 안(3.5, 1,000)과 말줄임(...)·물음표·느낌표는 둔다
 const capTrim = s => String(s).replace(/(?<![.\d])[.,。、](?![.\d])(?=["'”’」』)\]]*(\s|$))/g, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+$/, '');
-function capFixPrompt(cap) {
+function capFixPrompt(cap, script) {
   return `너는 한국어 영상 자막 교정자다. 아래 자막 줄마다 맞춤법과 띄어쓰기만 고쳐라.
 - 말투·어휘·어순·내용은 바꾸지 마라. 입말 그대로 둔다(예: "근데", "되게", "~거든요", "막"). 더 좋은 표현으로 바꾸지 마라.
 - 줄을 합치거나 나누지 마라. 번호마다 한 줄이다.
@@ -1937,10 +1941,16 @@ function capFixPrompt(cap) {
 - 사람 이름, 병원 이름, 숫자 값은 철자를 바꾸지 마라(띄어쓰기만 맞춘다. 예: "3만번" → "3만 번").
 - 말끝의 온점(.)과 반점(,)은 프로그램이 모두 지우니 신경 쓰지 마라. 물음표·느낌표·따옴표는 그대로 둔다.
 - 고칠 것이 없는 줄은 적지 마라. 바꾼 줄만 적는다.
-
+${script ? `
+[대본]은 촬영 전에 쓴 원고다. 원장은 대본과 다르게 말하거나, 주제만 같고 대본은 거의 무시한 채 자기 이야기를 하는 경우가 많다. 자막은 실제로 한 말이므로 대본은 낱말 표기 사전으로만 써라.
+- 자막의 한 낱말이 받아쓰기가 잘못 들은 것으로 보이고(소리가 비슷하다), 대본에 그 낱말의 정확한 표기(의학 용어, 성분·제품·시술 이름, 병원·사람 이름, 숫자·단위)가 있을 때만 그 낱말을 대본 표기로 바꿔라.
+- 대본 문장에 맞춰 줄을 고치지 마라. 대본에 있는 말을 넣거나, 실제로 한 말을 빼거나, 어순·말투·어미를 대본처럼 바꾸지 마라.
+- 대본과 내용이 다른 줄, 대본에 없는 줄은 정상이다. 그 때문에 고치지 마라.
+- 대본 표기를 보고 바꾼 줄에는 "s":1 을 붙여라.
+` : ''}
 아래 모양의 JSON만 답하라. 설명이나 다른 말은 붙이지 마라.
-{"lines":[{"i":12,"t":"고친 줄 전체"}]}
-
+{"lines":[{"i":12,"t":"고친 줄 전체"${script ? '},{"i":30,"t":"고친 줄 전체","s":1' : ''}}]}
+${script ? '\n[대본]\n' + String(script).slice(0, 30000) + '\n' : ''}
 [자막] 번호 | 글자
 ${cap.clips.map((c, i) => `${i} | ${c.text}`).join('\n')}`;
 }
@@ -1949,11 +1959,14 @@ function capApplyFix(cap, ans) {
   // 영어 약어로 바꾼 줄도 받도록 알파벳은 우리말 이름으로 읽어 비교한다 (SNS → 에스엔에스)
   const ABC = '에이 비 씨 디 이 에프 지 에이치 아이 제이 케이 엘 엠 엔 오 피 큐 알 에스 티 유 브이 더블유 엑스 와이 지'.split(' ');
   const texts = cap.clips.map(c => c.text), got = new Map(), changed = [], rejected = [], norm = s => String(s || '').replace(/[A-Za-z]/g, ch => ABC[ch.toUpperCase().charCodeAt(0) - 65]).replace(/[\s.,!?~"'“”‘’·…:;()\-]/g, '');
-  for (const x of (ans && Array.isArray(ans.lines) ? ans.lines : [])) { const i = +x.i; if (Number.isInteger(i) && i >= 0 && i < texts.length && typeof x.t === 'string' && x.t.trim()) got.set(i, x.t.replace(/\s+/g, ' ').trim()); }
+  const bySc = new Set();
+  for (const x of (ans && Array.isArray(ans.lines) ? ans.lines : [])) { const i = +x.i; if (Number.isInteger(i) && i >= 0 && i < texts.length && typeof x.t === 'string' && x.t.trim()) { got.set(i, x.t.replace(/\s+/g, ' ').trim()); if (x.s) bySc.add(i); } }
   texts.forEach((t, i) => {
     let v = got.has(i) ? got.get(i) : t;
-    if (got.has(i)) { const a = norm(t), b = norm(v), same = a && b ? lcsAlign(a, b).len / Math.max(a.length, b.length) : 0; if (same < 0.75) { rejected.push({ i, from: t, to: v }); v = t; } }
-    v = capTrim(v); if (v !== t) changed.push({ i, from: t, to: v, by: got.has(i) && !rejected.some(r => r.i === i) ? (capTrim(t) === v ? 'trim' : 'gpt') : 'trim' }); texts[i] = v;
+    if (got.has(i)) { const a = norm(t), b = norm(v), L = a && b ? lcsAlign(a, b).len : 0, same = L / Math.max(a.length, b.length || 1);
+      // 대본을 보고 바꾼 줄은 낱말 표기만 바꿨어야 한다: 대본 말이 들어가거나 한 말이 빠졌으면(더하거나 뺀 글자 6자 넘게) 받지 않는다
+      if (same < 0.75 || (bySc.has(i) && (b.length - L > 6 || a.length - L > 6))) { rejected.push({ i, from: t, to: v }); v = t; } }
+    v = capTrim(v); if (v !== t) changed.push({ i, from: t, to: v, by: got.has(i) && !rejected.some(r => r.i === i) ? (capTrim(t) === v ? 'trim' : bySc.has(i) ? 'script' : 'gpt') : 'trim' }); texts[i] = v;
   });
   return { texts, changed, rejected };
 }
@@ -2050,25 +2063,46 @@ function renderFiles() {
 }
 async function addFiles(list) {
   show('err1', ''); for (const f of list) for (const k in KIND) if (KIND[k][1].test(f.name)) { st.files[k] = f; if (k === 'xml' && f !== st.fixedFile) { st.fix = null; $('fixDetail').hidden = true; $('btnFixSave').hidden = true; $('fixManual').hidden = true; $('fixState').textContent = /교정|맞춤법/.test(f.name) ? '이름으로 보아 이미 교정한 XML 같습니다. 그대로 써도 됩니다.' : ''; } }
-  renderFiles(); $('nameF').textContent = Object.keys(st.files).length + '/4 개 넣음'; $('fixBox').hidden = !st.files.xml;
+  renderFiles(); $('nameF').textContent = Object.keys(st.files).length + '/4 개 넣음'; $('fixBox').hidden = !st.files.xml; findScript();
   if (Object.keys(KIND).every(k => st.files[k])) await analyze();
 }
 
 /* ---------- 1-1. 자막 교정: 맞춤법·띄어쓰기(GPT) + 줄 끝 온점·반점 지우기(규칙) → 교정 XML 로 바꿔 넣는다 ---------- */
 async function fixCap() { return E.parseCaptionXml(await st.files.xml.text()); }
+/* 대본: 직접 넣거나, 같은 촬영본(업체_촬영일_순위)을 컷편집할 때 넣은 대본을 불러온다. 교정 때 낱말 표기 사전으로만 쓴다 */
+const projKey = n => { const p = String(n || '').replace(/\.[^.]+$/, '').split('_'), k = p.findIndex(x => /순위$/.test(x)); return (k >= 0 ? p.slice(0, k + 1) : p.slice(0, 3)).join('_'); };
+// from: 'cut'(컷편집에서 자동) | 'manual'(직접 넣음) | ''. 대본이 들어 있으면 칸을 펼치고 제목에서 바로 알린다
+function setScript(text, name, from, key) {
+  st.script = text || ''; st.scriptFrom = st.script ? from : ''; st.scriptKey = key || ''; $('btnNoScript2').hidden = !st.script; $('scriptBox').open = !!st.script;
+  $('scriptSum').textContent = !st.script ? '📄 대본이 있다면? ' : from === 'cut' ? '✓ 대본: 컷편집에서 넣은 대본이 자동으로 들어가 있습니다 ' : '✓ 대본: 넣었습니다 ';
+  $('scriptHint').textContent = st.script ? '' : '(눌러서 열기)';
+  $('scriptState').textContent = st.script ? `${name} (${st.script.length.toLocaleString()}자${key ? ', ' + key + ' 촬영본' : ''}). 용어·이름·숫자 표기만 대본에서 가져오고, 대본과 다르게 말한 줄은 그대로 둡니다. 다른 대본이면 "대본 넣기"로 바꾸거나 "대본 빼기"를 누르세요.` : '대본이 있으면 의학 용어·이름·숫자 표기를 대본에서 가져옵니다. 대본과 다르게 말한 부분은 그대로 둡니다.';
+}
+function findScript() {
+  if (st.scriptFrom === 'manual') return; // 직접 넣은 대본은 건드리지 않는다
+  const keys = [...new Set(Object.values(st.files).map(f => projKey(f.name)))];
+  for (const k of keys) { const s = store.get('script-' + k); if (s && s.text) return setScript(s.text, s.name, 'cut', k); }
+  if (keys.length) { if (st.scriptFrom === 'cut' && !keys.includes(st.scriptKey)) setScript(''); return; } // 다른 촬영본 대본이면 뺀다
+  const last = store.get('script-last'); if (last && last.text && Date.now() - last.ts < 12 * 3600e3) setScript(last.text, last.name, 'cut', last.key); // 파일을 넣기 전: 컷편집에서 방금 넣은 대본
+}
+window.addEventListener('storage', e => { if (/^script-/.test(e.key || '')) findScript(); }); // 컷편집 탭에서 대본을 넣으면 바로 반영
+findScript();
+$('btnScript').onclick = () => $('fileScript').click();
+$('fileScript').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const b = new Uint8Array(await f.arrayBuffer()); setScript(/\.docx$/i.test(f.name) ? await E.docxText(b) : new TextDecoder().decode(b).trim(), f.name, 'manual'); } catch (er) { $('scriptState').textContent = '대본을 읽지 못했습니다: ' + er.message; } };
+$('btnNoScript2').onclick = () => { setScript(''); st.scriptFrom = 'manual'; }; // 뺀 뒤에는 자동으로 다시 넣지 않는다
 async function applyFix(ans) {
   const cap = await fixCap(), r = E.capApplyFix(cap, ans), xml = E.capXml(cap, r.texts), base = st.files.xml.name.replace(/\.xml$/i, '').replace(/_?xml$/i, '');
   const f = new File([xml], base + '_맞춤법_띄어쓰기_교정.xml', { type: 'text/xml' }); st.fix = { xml, name: f.name, r }; st.fixedFile = f;
-  const gpt = r.changed.filter(c => c.by === 'gpt').length, trim = r.changed.length - gpt;
-  $('fixState').textContent = `교정했습니다: 맞춤법·띄어쓰기 ${gpt}줄, 끝 온점·반점만 지운 줄 ${trim}줄` + (r.rejected.length ? `, 뜻이 바뀔 수 있어 받지 않은 줄 ${r.rejected.length}줄` : '') + '. 이 XML로 타이밍을 맞춥니다.';
+  const gpt = r.changed.filter(c => c.by === 'gpt').length, sc = r.changed.filter(c => c.by === 'script').length, trim = r.changed.length - gpt - sc;
+  $('fixState').textContent = `교정했습니다: 맞춤법·띄어쓰기 ${gpt}줄${sc ? `, 대본 표기로 고친 줄 ${sc}줄` : ''}, 끝 온점·반점만 지운 줄 ${trim}줄` + (r.rejected.length ? `, 뜻이 바뀔 수 있어 받지 않은 줄 ${r.rejected.length}줄` : '') + '. 이 XML로 타이밍을 맞춥니다.';
   $('fixSum').textContent = `바뀐 줄 ${r.changed.length}개 보기`; $('fixDetail').hidden = !r.changed.length && !r.rejected.length;
-  $('fixList').textContent = r.changed.map(c => `${c.i}. ${c.from}  →  ${c.to}`).join('\n') + (r.rejected.length ? '\n\n[받지 않은 제안]\n' + r.rejected.map(c => `${c.i}. ${c.from}  ✕  ${c.to}`).join('\n') : '');
+  $('fixList').textContent = r.changed.map(c => `${c.i}. ${c.by === 'script' ? '(대본) ' : ''}${c.from}  →  ${c.to}`).join('\n') + (r.rejected.length ? '\n\n[받지 않은 제안]\n' + r.rejected.map(c => `${c.i}. ${c.from}  ✕  ${c.to}`).join('\n') : '');
   $('btnFixSave').hidden = false; $('fixManual').hidden = true; await addFiles([f]);
 }
 $('btnFix').onclick = async () => {
   show('err1', ''); $('btnFix').disabled = true; const md = mode();
   try {
-    const prompt = E.capFixPrompt(await fixCap());
+    const prompt = E.capFixPrompt(await fixCap(), st.script);
     if (md === 'gpt' || (md === 'claude' && st.ask)) { $('fixState').textContent = (md === 'gpt' ? 'GPT' : 'Claude') + '가 교정하는 중… 보통 1~2분 걸립니다.'; await applyFix(md === 'gpt' ? await askGpt(prompt) : await st.ask(prompt)); }
     else { st.fixPrompt = prompt; $('fixOut').value = prompt; $('fixIn').value = ''; $('fixManual').hidden = false; $('fixState').textContent = `요청문 ${prompt.length.toLocaleString()}자`; }
   } catch (er) { $('fixState').textContent = ''; show('err1', '교정하지 못했습니다: ' + (er.message || er) + '\n"GPT 없이 끝 온점·반점만 지우기"나 복사·붙여넣기 방식으로 할 수 있습니다.'); $('fixManual').hidden = false; }
