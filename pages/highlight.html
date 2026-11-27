@@ -797,10 +797,13 @@ function buildShort(M, S, an, sh, plan, opt) {
   else warn('미드폼에서 음악 클립을 찾지 못했습니다.');
   // 3) 삽입 이미지·라벨
   const board = opt.boardId ? an.inserts.find(c => c.id === String(opt.boardId)) : an.inserts.find(c => /대판|board/i.test(c.name));
+  const fit = fitGroups(M, an, sh, insertClips.filter(c => keep.get(c.id) === 'fit'));
   for (const c of insertClips) for (const p of pieces(c.start, c.end)) {
     const mode = keep.get(c.id), n = bring(c, p), m = c.kind === 'text' || mode === 'keep' ? null : S.ensureMotion(n);
-    if (c.kind === 'text') { for (const comp of S.comps(n)) if (txt(ch(comp, 'MatchName')) === 'AE.ADBE Text') { const ps = S.params(comp); S.scaleParam(ps[3], kx); S.scaleParam(ps[4], kx); } }
-    else if (m && mode === 'fill') S.scaleParam(m.scale, ky);
+    const g = mode === 'fit' ? fit.get(c.id) : null;
+    if (g) fitClip(S, n, c, g, an, sh); // 그림이 없는 묶음(이름표만 등)은 예전 방식대로
+    else if (c.kind === 'text') { for (const comp of S.comps(n)) if (txt(ch(comp, 'MatchName')) === 'AE.ADBE Text') { const ps = S.params(comp); S.scaleParam(ps[3], kx); S.scaleParam(ps[4], kx); } }
+    else if (m && mode === 'fill') coverFrame(S, m, c, sh, ky);
     else if (m && mode === 'board') {
       S.scaleParam(m.scale, kx);
       const bgSrc = board && board !== c ? board : null;
@@ -848,6 +851,50 @@ function buildShort(M, S, an, sh, plan, opt) {
   vAdd.forEach((arr, i) => S.addToTrack(vt[i], tidy(arr))); aAdd.forEach((arr, i) => S.addToTrack(at[i], tidy(arr)));
   sh.end = Tend;
   return { start: T0, end: Tend, log, counts: { video: vAdd.reduce((a, c) => a + c.length, 0), audio: aAdd.reduce((a, c) => a + c.length, 0) } };
+}
+/* ---- 삽입물을 세로 화면에 맞추기 ----
+   같은 때 함께 나오는 삽입물(그림·선 그래픽·이름표 글자)은 한 묶음으로, 똑같은 배율로 키우고 옮긴다. 하나씩 따로 키우면 선·글자가 그림에서 어긋난다.
+   묶음 크기는 그림들의 실제 크기(원본 크기×배율)와 글자 위치로 잰다. 세로 화면의 가로 78%·세로 45% 칸 안에 들어가게, 가운데(살짝 아래)에 놓는다
+   (사람이 손본 쇼츠: 본 그림을 가로 730~840px로 키워 가운데에 둠). 위치는 화면 비율(0~1), 배율은 원본 픽셀 기준이라 같은 식으로 옮길 수 있다 */
+const FIT_BOX = { w: 0.78, h: 0.45, cx: 0.49, cy: 0.52 };
+function motionVals(c) { const m = c.motion; return m ? { x: m.x, y: m.y, s: m.s } : { x: 0.5, y: 0.5, s: 100 }; }
+function textLayers(S, n) { return S.comps(n).filter(comp => txt(ch(comp, 'MatchName')) === 'AE.ADBE Text').map(comp => S.params(comp)); }
+function fitGroups(S, an, sh, clips) {
+  const W = an.seq.w, H = an.seq.h, Ws = sh.seq.w, Hs = sh.seq.h, res = new Map(), left = clips.slice().sort((a, b) => a.start - b.start);
+  while (left.length) { // 시간이 겹치는 것끼리 한 묶음
+    const grp = [left.shift()]; let end = grp[0].end;
+    for (let i = 0; i < left.length; i++) if (left[i].start < end) { end = Math.max(end, left[i].end); grp.push(left.splice(i--, 1)[0]); }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, hasPic = false; const add = (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
+    for (const c of grp) {
+      if (c.kind === 'text') { for (const ps of textLayers(S, c.node)) { const sk = ch(ps[2], 'StartKeyframe'); if (!sk) continue; const xy = sk.textContent.split(',')[1].split(':').map(Number); if (xy.every(isFinite)) add(xy[0] * W, xy[1] * H, xy[0] * W, xy[1] * H); } continue; }
+      if (!c.natW) continue; const v = motionVals(c), w = c.natW * v.s / 100, h = c.natH * v.s / 100;
+      if (w < W * 0.95 || h < H * 0.95) { hasPic = true; add(v.x * W - w / 2, v.y * H - h / 2, v.x * W + w / 2, v.y * H + h / 2); } // 화면만 한 선 그래픽 틀은 크기 재기에서 뺀다
+    }
+    if (!hasPic) continue; // 그림이 하나도 없으면(이름표·글자만) 크기를 잴 수 없어 맞추지 않는다
+    const b = [x0, y0, x1, y1], bw = Math.max(1, b[2] - b[0]), bh = Math.max(1, b[3] - b[1]);
+    const g = { k: Math.min(FIT_BOX.w * Ws / bw, FIT_BOX.h * Hs / bh, 3), cx: (b[0] + b[2]) / 2, cy: (b[1] + b[3]) / 2, tx: FIT_BOX.cx * Ws, ty: FIT_BOX.cy * Hs };
+    for (const c of grp) res.set(c.id, g);
+  }
+  return res;
+}
+// 미드폼 한 점(픽셀) → 쇼츠 화면 비율 위치
+const fitPt = (g, px, py, Ws, Hs) => [((px - g.cx) * g.k + g.tx) / Ws, ((py - g.cy) * g.k + g.ty) / Hs];
+function fitClip(S, n, c, g, an, sh) {
+  const W = an.seq.w, H = an.seq.h, Ws = sh.seq.w, Hs = sh.seq.h;
+  if (c.kind === 'text') { // 글자: 글자 층마다 위치(화면 비율)를 옮기고 크기를 키운다
+    for (const ps of textLayers(S, n)) { const sk = ch(ps[2], 'StartKeyframe'); if (!sk) continue; const xy = sk.textContent.split(',')[1].split(':').map(Number); const [x, y] = fitPt(g, xy[0] * W, xy[1] * H, Ws, Hs); S.setPos(ps[2], x, y); S.scaleParam(ps[3], g.k); S.scaleParam(ps[4], g.k); }
+    return;
+  }
+  const m = S.ensureMotion(n); if (!m) return; const v = motionVals(c), [x, y] = fitPt(g, v.x * W, v.y * H, Ws, Hs);
+  S.setPos(m.pos, x, y); S.scaleParam(m.scale, g.k);
+}
+/* 대판처럼 화면을 덮는 배경: 잘라 둔 부분(자르기 왼·위·오른·아래)을 빼고 남은 부분이 세로 화면을 다 덮게 키우고, 남은 부분이 가운데 오게 옮긴다 */
+function coverFrame(S, m, c, sh, ky) {
+  const ps = S.params(m.comp), crop = i => (parseFloat(txt(ch(ps[i], 'StartKeyframe')).split(',')[1]) || 0) / 100, v = motionVals(c);
+  if (!c.natW || !c.natH) return S.scaleParam(m.scale, ky);
+  const L = crop(7), T = crop(8), R = crop(9), B = crop(10), vw = c.natW * (1 - L - R), vh = c.natH * (1 - T - B); if (vw <= 0 || vh <= 0) return S.scaleParam(m.scale, ky);
+  const f = Math.max(sh.seq.w / vw, sh.seq.h / vh), s = f * 100; S.scaleParam(m.scale, s / v.s);
+  const ox = c.natW * (L - R) / 2, oy = c.natH * (T - B) / 2; S.setPos(m.pos, (sh.seq.w / 2 - ox * f) / sh.seq.w, (sh.seq.h / 2 - oy * f) / sh.seq.h);
 }
 /* 견본 이미지 클립이 다른 이미지(이모지)를 가리키게 한다 */
 function retarget(S, ti, em, tplInfo) {
