@@ -887,6 +887,23 @@ function buildShort(M, S, an, sh, plan, opt) {
    (사람이 손본 쇼츠: 본 그림을 가로 730~840px로 키워 가운데에 둠). 위치는 화면 비율(0~1), 배율은 원본 픽셀 기준이라 같은 식으로 옮길 수 있다 */
 const FIT_BOX = { w: 0.78, h: 0.45, cx: 0.49, cy: 0.52 };
 function motionVals(c) { const m = c.motion; return m ? { x: m.x, y: m.y, s: m.s } : { x: 0.5, y: 0.5, s: 100 }; }
+/* 글자·도형 그래픽(에센셜 그래픽): 층마다 위치가 "지금 시퀀스 화면 비율"로 저장된다(16:9에서 9:16로 옮기면 같은 숫자라도 다른 곳에 그려짐).
+   그래서 그림처럼 틀째 키우지 않고, 층마다 미드폼에서 실제로 그려지는 점을 구해 그 점을 옮긴 뒤, 쇼츠에서 같은 그룹·움직임을 거꾸로 풀어 층 위치를 정한다.
+   층: 글자(AE.ADBE Text 위치 2·크기 3,4), 도형(AE.ADBE Shape 위치 3·크기 4,5). 위에 얹힌 그룹 변형(Graphic Group)·움직임(Motion)도 계산에 넣는다 */
+const kv = p => { const sk = p && ch(p, 'StartKeyframe'); return sk ? sk.textContent.split(',')[1] : null; };
+const xyOf = p => { const v = kv(p); if (!v) return null; const a = v.split(':').map(Number); return a.length === 2 && a.every(isFinite) ? a : null; };
+function gfxOf(S, n) {
+  const o = { layers: [], group: null, motion: null };
+  for (const comp of S.comps(n)) { const mn = txt(ch(comp, 'MatchName')), ps = S.params(comp);
+    if (mn === 'AE.ADBE Text') o.layers.push({ pos: ps[2], sc: [ps[3], ps[4]] });
+    else if (mn === 'AE.ADBE Shape') o.layers.push({ pos: ps[3], sc: [ps[4], ps[5]] });
+    else if (mn === 'AE.ADBE Graphic Group' && !o.group) { const p = xyOf(ps[0]), a = xyOf(ps[5]); if (p && a) o.group = { p, a, s: (parseFloat(kv(ps[1])) || 100) / 100 }; }
+    else if (mn === 'AE.ADBE Motion' && !o.motion) { const p = xyOf(ps[0]), a = xyOf(ps[5]) || [0.5, 0.5]; if (p) o.motion = { p, a, s: (parseFloat(kv(ps[1])) || 100) / 100 }; } }
+  o.layers = o.layers.filter(L => xyOf(L.pos)); return o;
+}
+// 층 위치(화면 비율) → 실제로 그려지는 점(픽셀). 거꾸로도
+const gfxFwd = (g, u, v, W, H) => { let x = u * W, y = v * H; for (const t of [g.group, g.motion]) if (t) { x = (x - t.a[0] * W) * t.s + t.p[0] * W; y = (y - t.a[1] * H) * t.s + t.p[1] * H; } return [x, y]; };
+const gfxInv = (g, x, y, W, H) => { for (const t of [g.motion, g.group]) if (t) { x = (x - t.p[0] * W) / t.s + t.a[0] * W; y = (y - t.p[1] * H) / t.s + t.a[1] * H; } return [x / W, y / H]; };
 function textLayers(S, n) { return S.comps(n).filter(comp => txt(ch(comp, 'MatchName')) === 'AE.ADBE Text').map(comp => S.params(comp)); }
 function fitGroups(S, an, sh, clips) {
   const W = an.seq.w, H = an.seq.h, Ws = sh.seq.w, Hs = sh.seq.h, res = new Map(), left = clips.slice().sort((a, b) => a.start - b.start);
@@ -895,9 +912,10 @@ function fitGroups(S, an, sh, clips) {
     for (let i = 0; i < left.length; i++) if (left[i].start < end) { end = Math.max(end, left[i].end); grp.push(left.splice(i--, 1)[0]); }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, hasPic = false; const add = (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
     for (const c of grp) {
-      if (c.kind === 'text') { for (const ps of textLayers(S, c.node)) { const sk = ch(ps[2], 'StartKeyframe'); if (!sk) continue; const xy = sk.textContent.split(',')[1].split(':').map(Number); if (xy.every(isFinite)) add(xy[0] * W, xy[1] * H, xy[0] * W, xy[1] * H); } continue; }
-      if (!c.natW) continue; const v = motionVals(c), w = c.natW * v.s / 100, h = c.natH * v.s / 100;
-      if (w < W * 0.95 || h < H * 0.95) { hasPic = true; add(v.x * W - w / 2, v.y * H - h / 2, v.x * W + w / 2, v.y * H + h / 2); } // 화면만 한 선 그래픽 틀은 크기 재기에서 뺀다
+      const gf = c.kind === 'text' || c.kind === 'synthetic' ? gfxOf(S, c.node) : null;
+      if (gf && gf.layers.length) { for (const L of gf.layers) { const q = xyOf(L.pos), [x, y] = gfxFwd(gf, q[0], q[1], W, H); add(x, y, x, y); } continue; }
+      if (!c.natW || c.kind === 'text') continue; const v = motionVals(c), w = c.natW * v.s / 100, h = c.natH * v.s / 100;
+      if (w < W * 0.95 || h < H * 0.95) { hasPic = true; add(v.x * W - w / 2, v.y * H - h / 2, v.x * W + w / 2, v.y * H + h / 2); } // 화면만 한 틀은 크기 재기에서 뺀다
     }
     if (!hasPic) continue; // 그림이 하나도 없으면(이름표·글자만) 크기를 잴 수 없어 맞추지 않는다
     const b = [x0, y0, x1, y1], bw = Math.max(1, b[2] - b[0]), bh = Math.max(1, b[3] - b[1]);
@@ -906,13 +924,15 @@ function fitGroups(S, an, sh, clips) {
   }
   return res;
 }
-// 미드폼 한 점(픽셀) → 쇼츠 화면 비율 위치
-const fitPt = (g, px, py, Ws, Hs) => [((px - g.cx) * g.k + g.tx) / Ws, ((py - g.cy) * g.k + g.ty) / Hs];
+// 미드폼 한 점(픽셀) → 쇼츠 한 점(픽셀)
+const fitPx = (g, px, py) => [(px - g.cx) * g.k + g.tx, (py - g.cy) * g.k + g.ty];
+const fitPt = (g, px, py, Ws, Hs) => { const [x, y] = fitPx(g, px, py); return [x / Ws, y / Hs]; };
 function fitClip(S, n, c, g, an, sh) {
   const W = an.seq.w, H = an.seq.h, Ws = sh.seq.w, Hs = sh.seq.h;
-  if (c.kind === 'text') { // 글자: 글자 층마다 위치(화면 비율)를 옮기고 크기를 키운다
-    for (const ps of textLayers(S, n)) { const sk = ch(ps[2], 'StartKeyframe'); if (!sk) continue; const xy = sk.textContent.split(',')[1].split(':').map(Number); const [x, y] = fitPt(g, xy[0] * W, xy[1] * H, Ws, Hs); S.setPos(ps[2], x, y); S.scaleParam(ps[3], g.k); S.scaleParam(ps[4], g.k); }
-    return;
+  if (c.kind === 'text' || c.kind === 'synthetic') { // 글자·도형 그래픽: 층마다 옮긴다(그룹·움직임은 그대로 두고 거꾸로 풀어 층 위치를 정함)
+    const gf = gfxOf(S, n);
+    if (gf.layers.length) { for (const L of gf.layers) { const q = xyOf(L.pos), [mx, my] = gfxFwd(gf, q[0], q[1], W, H), [tx, ty] = fitPx(g, mx, my), [u, v] = gfxInv(gf, tx, ty, Ws, Hs); S.setPos(L.pos, u, v); for (const p of L.sc) S.scaleParam(p, g.k); } return; }
+    if (c.kind === 'text') return;
   }
   const m = S.ensureMotion(n); if (!m) return; const v = motionVals(c), [x, y] = fitPt(g, v.x * W, v.y * H, Ws, Hs);
   S.setPos(m.pos, x, y); S.scaleParam(m.scale, g.k);
@@ -2088,7 +2108,7 @@ function relinkFonts(P, map) {
   }
   return { layers, skipped, count };
 }
-const Engine = { TICKS, relinkFonts, hubGpt, cutCompare, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
+const Engine = { __pts: (S, n, W, H) => { const g = gfxOf(S, n); return g.layers.map(L => { const q = xyOf(L.pos); return gfxFwd(g, q[0], q[1], W, H); }); }, TICKS, relinkFonts, hubGpt, cutCompare, splitTwo,showGuide, ST, subtimeDiff, subtimeLearned, learnSubtimeFromProject, unzipEntry, cutTimes, runTiming, parseCaptionXml, parseVrew, energyEnvelope, estimateOffset, alignEojeol, ruleSegments, checkSegments, timeSegments, writeCaptionXml, srtOf, tcOf, analyzeChapterTpl, readTransStyle, buildChapters, Proj, analyzeMid, analyzeShorts, transcript, buildShort, layerTexts, baseName, sec, fbText, spokenLines, hookLen, analyzeTemplate, learnStyle, mergeStyles, buildFx, lcsAlign, analyzeExtractTpl, buildExtract, foreignMedia, guessTplFolder, cleanFolder, fixMediaPaths, buildHighlight, fxRules, fxRuleCheck, fxRuleApply, capTrim, capFixPrompt, capApplyFix, capXml, gptUrl, gptSetup, buildCut, CUT_STRENGTH, cutVoices, cutUnits, cutRules, cutKeep, cutBoundaries, docxText, readTranscript, layerX };
 if (typeof window !== 'undefined') window.Engine = Engine;
 
 </script>
